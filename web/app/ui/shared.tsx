@@ -2,6 +2,7 @@
 
 import type { FormEvent } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { GAME_TAGLINE, PAWNS } from "@/lib/game-data";
 import type { BoardTheme, FortuneGameState, PawnDefinition } from "@/lib/game-types";
 
@@ -61,7 +62,7 @@ export function RulesCard({ onClose }: { onClose: () => void }) {
   );
 }
 
-export function OpeningScreen({ onEnter, onRules }: { onEnter: () => void; onRules: () => void }) {
+export function OpeningScreen({ enterHref, onEnter, onRules }: { enterHref: string; onEnter: () => void; onRules: () => void }) {
   return (
     <main className="opening-screen">
       <div className="opening-cover" aria-hidden="true" />
@@ -72,7 +73,7 @@ export function OpeningScreen({ onEnter, onRules }: { onEnter: () => void; onRul
         <div className="opening-logo" aria-label="Fortune Avenue"><span>Fortune</span><span>Avenue</span></div>
         <p>{GAME_TAGLINE}</p>
         <div className="opening-actions">
-          <button className="gold-button opening-enter" type="button" onClick={onEnter}>Enter the Avenue<span className="button-shine" /></button>
+          <Link className="gold-button opening-enter" href={enterHref} onClick={(event) => { event.preventDefault(); onEnter(); }}>Enter the Avenue<span className="button-shine" /></Link>
           <button className="glass-button" type="button" onClick={onRules}>Read the rules</button>
         </div>
       </div>

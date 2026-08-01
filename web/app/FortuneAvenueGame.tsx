@@ -38,14 +38,38 @@ function sessionKey(code: string) {
   return `${SESSION_PREFIX}${code.toUpperCase()}`;
 }
 
+function storageGet(key: string) {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function storageSet(key: string, value: string) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // Some mobile in-app browsers restrict storage. The open game still works.
+  }
+}
+
+function storageRemove(key: string) {
+  try {
+    window.localStorage.removeItem(key);
+  } catch {
+    // A restricted browser may not have created a stored session to remove.
+  }
+}
+
 function saveSession(credentials: RoomCredentials) {
-  localStorage.setItem(sessionKey(credentials.roomCode), JSON.stringify(credentials));
-  localStorage.setItem(LAST_ROOM_KEY, credentials.roomCode);
+  storageSet(sessionKey(credentials.roomCode), JSON.stringify(credentials));
+  storageSet(LAST_ROOM_KEY, credentials.roomCode);
 }
 
 function readSession(code: string): RoomCredentials | null {
   try {
-    const raw = localStorage.getItem(sessionKey(code));
+    const raw = storageGet(sessionKey(code));
     return raw ? JSON.parse(raw) as RoomCredentials : null;
   } catch {
     return null;
@@ -56,16 +80,17 @@ function roomUrl(code: string) {
   return `${window.location.origin}${window.location.pathname}?room=${code}`;
 }
 
-export default function FortuneAvenueGame() {
-  const [screen, setScreen] = useState<Screen>("opening");
-  const [setupMode, setSetupMode] = useState<SetupMode>("bots");
+export default function FortuneAvenueGame({ initialRoomCode = "", autoEnter = false }: { initialRoomCode?: string; autoEnter?: boolean }) {
+  const sanitizedInitialRoom = initialRoomCode.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
+  const [screen, setScreen] = useState<Screen>(autoEnter ? (sanitizedInitialRoom.length === 6 ? "loading" : "home") : "opening");
+  const [setupMode, setSetupMode] = useState<SetupMode>(sanitizedInitialRoom.length === 6 ? "join" : "bots");
   const [showRules, setShowRules] = useState(false);
   const [playerName, setPlayerName] = useState("Avenue Legend");
   const [pawnSlug, setPawnSlug] = useState(PAWNS[8].slug);
   const [theme, setTheme] = useState<BoardTheme>("emerald");
   const [playerCount, setPlayerCount] = useState(4);
   const [botCount, setBotCount] = useState(0);
-  const [joinCode, setJoinCode] = useState("");
+  const [joinCode, setJoinCode] = useState(sanitizedInitialRoom);
   const [recentRoom, setRecentRoom] = useState<string | null>(null);
   const [state, setState] = useState<FortuneGameState | null>(null);
   const [credentials, setCredentials] = useState<RoomCredentials | null>(null);
@@ -78,6 +103,7 @@ export default function FortuneAvenueGame() {
   const [cardReveal, setCardReveal] = useState<GameEvent | null>(null);
   const seenEvent = useRef<string | null>(null);
   const audioContext = useRef<AudioContext | null>(null);
+  const initialRoomHandled = useRef(false);
 
   const showToast = useCallback((message: string) => {
     setToast(message);
@@ -153,7 +179,7 @@ export default function FortuneAvenueGame() {
       }
       const response = await fetchRoom(code, session);
       if (!response.you) {
-        localStorage.removeItem(sessionKey(code));
+        storageRemove(sessionKey(code));
         setJoinCode(code);
         setSetupMode("join");
         setScreen("setup");
@@ -171,19 +197,30 @@ export default function FortuneAvenueGame() {
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
-      const savedName = localStorage.getItem(NAME_KEY);
-      const savedRoom = localStorage.getItem(LAST_ROOM_KEY);
+      const savedName = storageGet(NAME_KEY);
+      const savedRoom = storageGet(LAST_ROOM_KEY);
       if (savedName) setPlayerName(savedName);
       if (savedRoom) setRecentRoom(savedRoom);
-      setMuted(localStorage.getItem(MUTED_KEY) === "true");
-      const invitedCode = new URLSearchParams(window.location.search).get("room")?.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
+      setMuted(storageGet(MUTED_KEY) === "true");
+      const currentUrl = new URL(window.location.href);
+      const invitedCode = currentUrl.searchParams.get("room")?.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
       if (invitedCode) {
         setJoinCode(invitedCode);
         setSetupMode("join");
       }
+      if (currentUrl.searchParams.has("play")) {
+        currentUrl.searchParams.delete("play");
+        window.history.replaceState({}, "", currentUrl);
+      }
     });
     return () => window.cancelAnimationFrame(frame);
   }, []);
+
+  useEffect(() => {
+    if (!autoEnter || sanitizedInitialRoom.length !== 6 || initialRoomHandled.current) return;
+    initialRoomHandled.current = true;
+    void resumeCode(sanitizedInitialRoom);
+  }, [autoEnter, resumeCode, sanitizedInitialRoom]);
 
   useEffect(() => {
     if (!state?.lastEvent || state.lastEvent.id === seenEvent.current) return;
@@ -226,6 +263,8 @@ export default function FortuneAvenueGame() {
     } else setScreen("home");
   };
 
+  const enterHref = joinCode.length === 6 ? `/?room=${encodeURIComponent(joinCode)}&play=1` : "/?play=1";
+
   const openSetup = (mode: SetupMode) => {
     setSetupMode(mode);
     setError(null);
@@ -237,7 +276,7 @@ export default function FortuneAvenueGame() {
     event.preventDefault();
     setBusy(true);
     setError(null);
-    localStorage.setItem(NAME_KEY, playerName.trim());
+    storageSet(NAME_KEY, playerName.trim());
     try {
       const endpoint = setupMode === "join" ? `/api/rooms/${joinCode}/join` : "/api/rooms";
       const payload = setupMode === "join"
@@ -307,7 +346,7 @@ export default function FortuneAvenueGame() {
 
   const toggleMuted = () => {
     setMuted((value) => {
-      localStorage.setItem(MUTED_KEY, String(!value));
+      storageSet(MUTED_KEY, String(!value));
       return !value;
     });
   };
@@ -324,7 +363,7 @@ export default function FortuneAvenueGame() {
 
   return (
     <>
-      {screen === "opening" && <OpeningScreen onEnter={enterAvenue} onRules={() => setShowRules(true)} />}
+      {screen === "opening" && <OpeningScreen enterHref={enterHref} onEnter={enterAvenue} onRules={() => setShowRules(true)} />}
       {screen === "home" && <HomeScreen recentRoom={recentRoom} onMode={openSetup} onResume={() => recentRoom && void resumeCode(recentRoom)} onRules={() => setShowRules(true)} />}
       {screen === "setup" && <SetupScreen mode={setupMode} name={playerName} setName={setPlayerName} pawnSlug={pawnSlug} setPawnSlug={setPawnSlug} theme={theme} setTheme={setTheme} playerCount={playerCount} setPlayerCount={setPlayerCount} botCount={botCount} setBotCount={setBotCount} joinCode={joinCode} setJoinCode={setJoinCode} onSubmit={submitSetup} onBack={() => setScreen("home")} busy={busy} error={error} />}
       {screen === "loading" && <LoadingScreen />}
