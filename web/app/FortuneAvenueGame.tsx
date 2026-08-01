@@ -79,11 +79,17 @@ function roomUrl(code: string) {
   return `${window.location.origin}${window.location.pathname}?room=${code}`;
 }
 
-export default function FortuneAvenueGame({ initialRoomCode = "" }: { initialRoomCode?: string }) {
+export default function FortuneAvenueGame({
+  initialRoomCode = "",
+  initialRules = false,
+}: {
+  initialRoomCode?: string;
+  initialRules?: boolean;
+}) {
   const sanitizedInitialRoom = initialRoomCode.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
   const [screen, setScreen] = useState<Screen>(sanitizedInitialRoom.length === 6 ? "loading" : "home");
   const [setupMode, setSetupMode] = useState<SetupMode>(sanitizedInitialRoom.length === 6 ? "join" : "bots");
-  const [showRules, setShowRules] = useState(false);
+  const [showRules, setShowRules] = useState(initialRules);
   const [playerName, setPlayerName] = useState("Avenue Legend");
   const [pawnSlug, setPawnSlug] = useState(PAWNS[8].slug);
   const [theme, setTheme] = useState<BoardTheme>("emerald");
@@ -206,6 +212,10 @@ export default function FortuneAvenueGame({ initialRoomCode = "" }: { initialRoo
       if (invitedCode) {
         setJoinCode(invitedCode);
         setSetupMode("join");
+      }
+      if (currentUrl.searchParams.has("rules")) {
+        currentUrl.searchParams.delete("rules");
+        window.history.replaceState({}, "", currentUrl);
       }
     });
     return () => window.cancelAnimationFrame(frame);
