@@ -1,0 +1,204 @@
+{
+  "collection": "Fortune Avenue Colorful Resin Pawns",
+  "version": 1,
+  "status": "Approved concept / pre-production",
+  "default_material": "Cast resin with hand-painted opaque color and selective translucent inserts",
+  "finish": "Satin body paint; gloss gems, glass, metallic trim, and translucent effects",
+  "pawns": [
+    {
+      "code": "FA-P01",
+      "slug": "crooked-crown",
+      "name": "Crooked Crown",
+      "source": "assets/pawns/turnarounds/source/01-crooked-crown-turnaround-source.png",
+      "height_mm": 38,
+      "base": "30 mm round",
+      "views": ["FRONT", "RIGHT SIDE", "BACK"],
+      "material": "Opaque cast resin; gloss jewel accents",
+      "colors": [
+        {"name": "Royal Purple", "hex": "#5B2A86"},
+        {"name": "Antique Gold", "hex": "#B68A36"},
+        {"name": "Turquoise", "hex": "#20AAA5"},
+        {"name": "Ruby", "hex": "#B51F4C"}
+      ],
+      "notes": [
+        "Keep crown points and gold finials at least 1.5 mm thick.",
+        "Cast crown and base as one balanced piece.",
+        "Raise gem settings enough for clean paint separation."
+      ]
+    },
+    {
+      "code": "FA-P02",
+      "slug": "golden-dumpster",
+      "name": "Golden Dumpster",
+      "source": "assets/pawns/turnarounds/source/02-golden-dumpster-turnaround-source.png",
+      "height_mm": 36,
+      "base": "30 mm round",
+      "views": ["FRONT", "RIGHT SIDE", "BACK"],
+      "material": "Opaque cast resin; metallic and satin paint",
+      "colors": [
+        {"name": "Burnished Gold", "hex": "#B88627"},
+        {"name": "Street Teal", "hex": "#1FA6A0"},
+        {"name": "Hot Pink", "hex": "#E33C83"},
+        {"name": "Charcoal", "hex": "#242629"}
+      ],
+      "notes": [
+        "Fix the lid at roughly 20 degrees with two broad hinges.",
+        "Integrate side handles into the body wall.",
+        "Graffiti is painted shape work with no readable lettering."
+      ]
+    },
+    {
+      "code": "FA-P03",
+      "slug": "dab-valley-rig",
+      "name": "Dab Valley Rig",
+      "source": "assets/pawns/turnarounds/source/03-dab-valley-rig-turnaround-source.png",
+      "height_mm": 43,
+      "base": "30 mm round",
+      "views": ["FRONT 3/4", "RIGHT SIDE", "BACK 3/4"],
+      "material": "Translucent emerald, ruby, fuchsia, and aqua resin with opaque gold trim",
+      "colors": [
+        {"name": "Glass Emerald", "hex": "#2AAE92"},
+        {"name": "Heart Ruby", "hex": "#C52448"},
+        {"name": "Heart Fuchsia", "hex": "#D62D87"},
+        {"name": "Inner Heart", "hex": "#1BC9A3"},
+        {"name": "Deep Teal", "hex": "#187B78"},
+        {"name": "Antique Gold", "hex": "#B68A36"}
+      ],
+      "notes": [
+        "Exactly one mouthpiece and one quartz-banger opening; seal every other surface.",
+        "Support the large heart at two broad contacts and keep all tubes at least 2 mm thick.",
+        "Cast a solid top cap; key translucent heart inserts securely into the main body."
+      ]
+    },
+    {
+      "code": "FA-P04",
+      "slug": "midnight-express",
+      "name": "Midnight Express",
+      "source": "assets/pawns/turnarounds/source/04-midnight-express-turnaround-source.png",
+      "height_mm": 38,
+      "base": "38 x 30 mm oval",
+      "views": ["FRONT 3/4", "RIGHT SIDE", "BACK 3/4"],
+      "material": "Opaque cast resin; metallic trim and satin body paint",
+      "colors": [
+        {"name": "Engine Black", "hex": "#17191C"},
+        {"name": "Boiler Teal", "hex": "#278F88"},
+        {"name": "Midnight Violet", "hex": "#653586"},
+        {"name": "Antique Gold", "hex": "#B68A36"}
+      ],
+      "notes": [
+        "Fuse wheels, pipes, and track directly into the body and base.",
+        "Keep exposed pipes at least 1.5 mm thick.",
+        "Maintain the compact length so it fits standard board spaces."
+      ]
+    },
+    {
+      "code": "FA-P05",
+      "slug": "area-52-saucer",
+      "name": "Area 52 Saucer",
+      "source": "assets/pawns/turnarounds/source/05-area-52-saucer-turnaround-source.png",
+      "height_mm": 34,
+      "base": "32 mm round",
+      "views": ["FRONT", "RIGHT SIDE", "BACK"],
+      "material": "Opaque silver resin shell with translucent cyan beam and violet dome",
+      "colors": [
+        {"name": "Brushed Silver", "hex": "#8F969B"},
+        {"name": "Dome Violet", "hex": "#7044A5"},
+        {"name": "Signal Lime", "hex": "#A6C71C"},
+        {"name": "Beam Cyan", "hex": "#21CED1"},
+        {"name": "Crystal Purple", "hex": "#62407D"}
+      ],
+      "notes": [
+        "Use the translucent tractor beam as the load-bearing support.",
+        "Round antenna tips and keep shafts at least 1.5 mm thick.",
+        "Permanently join saucer, beam, terrain, and base."
+      ]
+    },
+    {
+      "code": "FA-P06",
+      "slug": "hotel-diablo-bell",
+      "name": "Hotel Diablo Bell",
+      "source": "assets/pawns/turnarounds/source/06-hotel-diablo-bell-turnaround-source.png",
+      "height_mm": 34,
+      "base": "30 mm round",
+      "views": ["FRONT", "RIGHT SIDE", "BACK"],
+      "material": "Opaque cast resin; gloss crimson shell and metallic trim",
+      "colors": [
+        {"name": "Diablo Crimson", "hex": "#A71929"},
+        {"name": "Piano Black", "hex": "#171719"},
+        {"name": "Antique Gold", "hex": "#B68A36"},
+        {"name": "Ruby", "hex": "#B51F4C"}
+      ],
+      "notes": [
+        "Join both horns fully to the bell shell and round their tips.",
+        "Use a broad fixed push button rather than a moving part.",
+        "Keep gold scrollwork as raised paint-friendly relief."
+      ]
+    },
+    {
+      "code": "FA-P07",
+      "slug": "wrong-turn-sign",
+      "name": "Wrong Turn Sign",
+      "source": "assets/pawns/turnarounds/source/07-wrong-turn-sign-turnaround-source.png",
+      "height_mm": 42,
+      "base": "30 mm round",
+      "views": ["FRONT", "RIGHT SIDE", "BACK"],
+      "material": "Opaque cast resin; weathered satin paint and metallic trim",
+      "colors": [
+        {"name": "Coral Pink", "hex": "#D84B69"},
+        {"name": "Weathered Teal", "hex": "#318F8A"},
+        {"name": "Antique Gold", "hex": "#B68A36"},
+        {"name": "Crystal Violet", "hex": "#7D3B8C"},
+        {"name": "Stone Gray", "hex": "#66615B"}
+      ],
+      "notes": [
+        "Keep the sign plate at least 2 mm and the post at least 3 mm thick.",
+        "Anchor the post through the sculpted rocks into the base.",
+        "Round and connect all crystal clusters to avoid sharp break points."
+      ]
+    },
+    {
+      "code": "FA-P08",
+      "slug": "fortune-key",
+      "name": "Fortune Key",
+      "source": "assets/pawns/turnarounds/source/08-fortune-key-turnaround-source.png",
+      "height_mm": 43,
+      "base": "30 mm round",
+      "views": ["FRONT", "RIGHT SIDE", "BACK"],
+      "material": "Opaque cast resin; gloss jewels, enamel colors, and metallic gold",
+      "colors": [
+        {"name": "Antique Gold", "hex": "#B68A36"},
+        {"name": "Fortune Fuchsia", "hex": "#C52169"},
+        {"name": "Enamel Turquoise", "hex": "#22A7A2"},
+        {"name": "Velvet Magenta", "hex": "#8E174D"}
+      ],
+      "notes": [
+        "Keep the key shaft at least 3 mm thick.",
+        "Use the rear filigree as a hidden brace from bow to base.",
+        "Separate raised gold borders cleanly for paint masking."
+      ]
+    },
+    {
+      "code": "FA-P09",
+      "slug": "fortune-penguin",
+      "name": "Fortune Penguin",
+      "source": "assets/pawns/turnarounds/source/09-fortune-penguin-turnaround-source.png",
+      "height_mm": 40,
+      "base": "30 mm round",
+      "views": ["FRONT 3/4", "RIGHT SIDE", "BACK 3/4"],
+      "material": "Opaque cast resin penguin with translucent turquoise ice terrain",
+      "colors": [
+        {"name": "Penguin Black", "hex": "#202225"},
+        {"name": "Warm Ivory", "hex": "#F0EBDD"},
+        {"name": "Vest Crimson", "hex": "#B52D35"},
+        {"name": "Royal Violet", "hex": "#633C82"},
+        {"name": "Bow Teal", "hex": "#1BA798"},
+        {"name": "Ice Cyan", "hex": "#36BCCC"}
+      ],
+      "notes": [
+        "Thicken both flippers and the lifted foot to at least 2.5 mm.",
+        "Key the standing foot and tail area firmly into the ice terrain.",
+        "Round all ice tips and keep the center of gravity over the base."
+      ]
+    }
+  ]
+}

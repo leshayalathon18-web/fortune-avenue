@@ -2,25 +2,34 @@
 
 > Roll in. Buy big. Cause chaos.
 
-![Fortune Avenue complete visual overview](output/mobile/fortune-avenue-overview-mobile.jpg)
+[![Play Fortune Avenue](web/public/og.png)](https://fortune-avenue-play.wjedplant.chatgpt.site)
 
-Fortune Avenue is an original physical board-game concept built around strange roadside landmarks, playful chaos, and two premium visual editions.
+Fortune Avenue is an original physical and browser-playable board game built around strange roadside landmarks, colorful resin pawns, and playful chaos.
 
-## What's included
+## Play now
 
-- Two complete 40-space boards using the same gameplay layout
-  - Emerald Edition — black, emerald, and gold
-  - Crimson Fantasy Edition — black, crimson, and gold
-- 24 original landmark spaces
-- 48 event cards
-  - 24 Lucky Break cards
-  - 24 Plot Twist cards
-- Nine approved colorful resin player pawns with front, side, and back sculpt turnarounds
-- Original artwork for landmarks, transportation, services, corners, and event spaces
-- Individual card exports, full deck sheets, high-resolution boards, and phone-friendly previews
-- Structured game and pawn data with reproducible Python rendering tools
+**[Open the published Fortune Avenue game](https://fortune-avenue-play.wjedplant.chatgpt.site)**
 
-## View the game
+- Play immediately with 1–5 autonomous bots.
+- Host persistent 2–6 player friend rooms with six-character codes and invite links.
+- Leave the page to share an invite, close the tab, or reload; the room and seat reconnect from the same device.
+- Choose the Emerald After Dark or Crimson Fantasy board theme.
+
+## What’s included
+
+- Two complete 40-space boards using the same gameplay layout:
+  - Emerald Edition — black, emerald, and gold.
+  - Crimson Fantasy Edition — black, crimson, and gold.
+- 24 original landmark spaces.
+- 48 event cards:
+  - 24 Lucky Break cards.
+  - 24 Plot Twist cards.
+- Nine approved colorful resin pawns with front, side, and back sculpt turnarounds.
+- Original artwork for landmarks, transportation, services, corners, event spaces, and the web-edition cover.
+- A complete browser game with rules, bot decisions, deed ownership, entry fees, upgrades, bankruptcy, animated card reveals, sound cues, and persistent rooms.
+- Structured game and pawn data with reproducible Python and web-asset rendering tools.
+
+## View the physical game artwork
 
 ### Boards
 
@@ -47,8 +56,6 @@ Fortune Avenue is an original physical board-game concept built around strange r
 - [Individual sculpt production sheets](output/pawns/production-sheets)
 - [Pawn dimensions and manufacturing guidance](docs/pawn-production-spec.md)
 
-Individual print-card images are available under [`output/cards`](output/cards), and the complete landmark artwork collection is under [`assets/landmarks`](assets/landmarks).
-
 ## Project structure
 
 ```text
@@ -56,10 +63,25 @@ assets/       Landmark, board-concept, special-space, and pawn artwork
 docs/         Landmark roster, pawn specifications, and naming notes
 game-data/    Canonical board, event-card, and pawn production data
 output/       Boards, cards, mobile previews, and pawn production sheets
-tools/        Deterministic board, card, and pawn production renderers
+tools/        Deterministic physical-game production renderers
+web/          Published browser game, room API, optimized art, and tests
 ```
 
-## Rebuild the exports
+## Browser-game validation
+
+From the `web` directory:
+
+```powershell
+npm install
+npm test
+npm run lint
+npm run dev
+npm run test:live-room
+```
+
+The automated suite covers the complete 40-space/48-card/nine-pawn collection, multi-round six-player bot play, social metadata, persistent-room storage, and required assets. The live smoke test creates a friend room, joins a second human seat, starts the game, and reconnects that seat.
+
+## Rebuild the physical exports
 
 Requires Python 3.10 or newer.
 
@@ -69,8 +91,6 @@ python tools/render_fortune_avenue.py
 python tools/make_mobile_previews.py
 python tools/render_pawn_production_sheets.py
 ```
-
-The renderers validate the expected 40 board spaces, 24 cards per event deck, nine approved pawns, required artwork paths, and text-fitting constraints before finishing.
 
 ## Canonical production notes
 
