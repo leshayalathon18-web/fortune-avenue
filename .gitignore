@@ -1,0 +1,6 @@
+# Local Codex attachment cache. Canonical selected artwork lives under assets/.
+.codex-remote-attachments/
+
+# Python caches
+__pycache__/
+*.py[cod]
