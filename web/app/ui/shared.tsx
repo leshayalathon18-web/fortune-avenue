@@ -76,7 +76,14 @@ export function HomeScreen({
     <main className="home-screen">
       <GoldParticles />
       <section className="home-cover-card">
-        <Image src="/cover.webp" width={1536} height={1024} priority alt="Fortune Avenue board, colorful pawns, and fantasy city" />
+        <Image
+          src="/og.png"
+          width={1536}
+          height={1024}
+          priority
+          unoptimized
+          alt="Fortune Avenue board, colorful pawns, and fantasy city"
+        />
         <div className="cover-card-glow" />
         <span className="edition-stamp">Playable web edition</span>
       </section>

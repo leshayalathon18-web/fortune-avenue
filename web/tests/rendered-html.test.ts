@@ -15,21 +15,25 @@ test("ships the finished Fortune Avenue opening and social metadata", async () =
     readFile(new URL("../app/error.tsx", import.meta.url), "utf8"),
   ]);
   assert.match(opening, /Enter the Avenue/);
-  assert.match(opening, /href="\/play"/);
+  assert.match(opening, /href="\/play\?release=6"/);
   assert.match(opening, /z-index: 2147483647/);
   assert.match(opening, /\.panel \{[^}]*opacity: 1;[^}]*visibility: visible;/);
-  assert.match(opening, /url\("\/cover\.webp"\)/);
+  assert.match(opening, /url\("\/og\.png"\)/);
   assert.match(opening, /2–6 players/);
   assert.doesNotMatch(opening, /<script\b/i);
   assert.match(layout, /Fortune Avenue.+Play with bots or friends/);
   assert.match(layout, /og\.png/);
-  assert.match(page, /redirect\("\/opening\.html\?release=5"\)/);
-  assert.match(launchPage, /redirect\("\/opening\.html\?release=5"\)/);
+  assert.match(page, /redirect\("\/opening\.html\?release=6"\)/);
+  assert.match(launchPage, /redirect\("\/opening\.html\?release=6"\)/);
   assert.match(playPage, /FortuneAvenueGame/);
   assert.match(game, /function storageGet/);
+  assert.match(shared, /src="\/og\.png"[\s\S]*unoptimized/);
   assert.doesNotMatch(`${game}${shared}`, /screen === "opening"|OpeningScreen/);
   assert.match(game, /useState<Screen>\(sanitizedInitialRoom\.length === 6 \? "loading" : "home"\)/);
   assert.match(styles, /\.home-menu \{[^}]*order: -1/);
+  assert.match(styles, /grid-template-columns: minmax\(0, 1fr\)/);
+  assert.match(styles, /\.home-cover-card \{[^}]*aspect-ratio: 3 \/ 2/);
+  assert.match(styles, /\.setup-card,[\s\S]*max-width: 980px;[\s\S]*min-width: 0;/);
   assert.match(errorScreen, /The Avenue needs one more roll/);
   assert.doesNotMatch(`${game}${shared}${opening}${layout}${page}${launchPage}${playPage}`, /Your site is taking shape|codex-preview|react-loading-skeleton/i);
 });
@@ -43,8 +47,10 @@ test("ships the bespoke cover, game art, and persistent-room migration", async (
     access(new URL("../drizzle/0000_chemical_forge.sql", import.meta.url)),
   ]);
   const migration = await readFile(new URL("../drizzle/0000_chemical_forge.sql", import.meta.url), "utf8");
+  const nextConfig = await readFile(new URL("../next.config.ts", import.meta.url), "utf8");
   assert.match(migration, /CREATE TABLE `fortune_rooms`/);
   assert.match(migration, /CREATE TABLE `fortune_room_sessions`/);
   assert.match(migration, /idx_fortune_rooms_updated_at/);
+  assert.match(nextConfig, /images:\s*\{\s*unoptimized: true/);
   assert.doesNotMatch(await readFile(new URL("../package.json", import.meta.url), "utf8"), /react-loading-skeleton/);
 });
