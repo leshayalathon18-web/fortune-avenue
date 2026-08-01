@@ -3,32 +3,35 @@ import { access, readFile } from "node:fs/promises";
 import test from "node:test";
 
 test("ships the finished Fortune Avenue opening and social metadata", async () => {
-  const [game, shared, launch, layout, page, playPage, styles, errorScreen] = await Promise.all([
+  const [game, shared, opening, layout, page, launchPage, playPage, styles, errorScreen] = await Promise.all([
     readFile(new URL("../app/FortuneAvenueGame.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/ui/shared.tsx", import.meta.url), "utf8"),
-    readFile(new URL("../app/ui/launch-screen.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../public/opening.html", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/launch/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/play/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../app/error.tsx", import.meta.url), "utf8"),
   ]);
-  assert.match(launch, /Enter the Avenue/);
-  assert.match(launch, /href="\/play"/);
-  assert.match(launch, /zIndex: 2147483647/);
-  assert.match(launch, /background: "#07100d"/);
-  assert.match(launch, /foreground build 4/);
-  assert.match(layout, /Fortune Avenue — Play with bots or friends/);
+  assert.match(opening, /Enter the Avenue/);
+  assert.match(opening, /href="\/play"/);
+  assert.match(opening, /z-index: 2147483647/);
+  assert.match(opening, /\.panel \{[^}]*opacity: 1;[^}]*visibility: visible;/);
+  assert.match(opening, /url\("\/cover\.webp"\)/);
+  assert.match(opening, /2–6 players/);
+  assert.doesNotMatch(opening, /<script\b/i);
+  assert.match(layout, /Fortune Avenue.+Play with bots or friends/);
   assert.match(layout, /og\.png/);
-  assert.match(page, /LaunchScreen/);
+  assert.match(page, /redirect\("\/opening\.html\?release=5"\)/);
+  assert.match(launchPage, /redirect\("\/opening\.html\?release=5"\)/);
   assert.match(playPage, /FortuneAvenueGame/);
   assert.match(game, /function storageGet/);
   assert.doesNotMatch(`${game}${shared}`, /screen === "opening"|OpeningScreen/);
   assert.match(game, /useState<Screen>\(sanitizedInitialRoom\.length === 6 \? "loading" : "home"\)/);
-  assert.match(styles, /\.launch-cover/);
   assert.match(styles, /\.home-menu \{[^}]*order: -1/);
   assert.match(errorScreen, /The Avenue needs one more roll/);
-  assert.doesNotMatch(`${game}${shared}${launch}${layout}${page}${playPage}`, /Your site is taking shape|codex-preview|react-loading-skeleton/i);
+  assert.doesNotMatch(`${game}${shared}${opening}${layout}${page}${launchPage}${playPage}`, /Your site is taking shape|codex-preview|react-loading-skeleton/i);
 });
 
 test("ships the bespoke cover, game art, and persistent-room migration", async () => {

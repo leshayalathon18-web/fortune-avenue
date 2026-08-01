@@ -1,5 +1,5 @@
-import { LaunchScreen } from "../ui/launch-screen";
+import { redirect } from "next/navigation";
 
 export default function LaunchPage() {
-  return <LaunchScreen />;
+  redirect("/opening.html?release=5");
 }
