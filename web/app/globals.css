@@ -1508,7 +1508,7 @@ button:disabled {
 @media (max-width: 900px) {
   .home-screen { grid-template-columns: 1fr; gap: 2rem; overflow-y: auto; }
   .home-cover-card { width: min(720px, 100%); justify-self: center; transform: none; }
-  .home-menu { width: min(640px, 100%); max-width: none; justify-self: center; }
+  .home-menu { width: min(640px, 100%); max-width: none; order: -1; justify-self: center; }
   .game-layout { grid-template-columns: 1fr; }
   .board-shell { width: min(100%, 760px); min-width: 0; }
   .game-sidebar { width: min(100%, 760px); height: auto; min-height: 0; grid-template-columns: 1fr 1fr; grid-template-rows: minmax(300px, 44svh); justify-self: center; }

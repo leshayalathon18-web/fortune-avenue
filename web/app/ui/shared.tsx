@@ -2,8 +2,7 @@
 
 import type { FormEvent } from "react";
 import Image from "next/image";
-import Link from "next/link";
-import { GAME_TAGLINE, PAWNS } from "@/lib/game-data";
+import { PAWNS } from "@/lib/game-data";
 import type { BoardTheme, FortuneGameState, PawnDefinition } from "@/lib/game-types";
 
 export type SetupMode = "bots" | "friends" | "join";
@@ -59,27 +58,6 @@ export function RulesCard({ onClose }: { onClose: () => void }) {
         </div>
       </section>
     </div>
-  );
-}
-
-export function OpeningScreen({ enterHref, onEnter, onRules }: { enterHref: string; onEnter: () => void; onRules: () => void }) {
-  return (
-    <main className="opening-screen">
-      <div className="opening-cover" aria-hidden="true" />
-      <div className="opening-vignette" />
-      <GoldParticles />
-      <div className="opening-content">
-        <span className="opening-eyebrow">The browser board game</span>
-        <div className="opening-logo" aria-label="Fortune Avenue"><span>Fortune</span><span>Avenue</span></div>
-        <p>{GAME_TAGLINE}</p>
-        <div className="opening-actions">
-          <Link className="gold-button opening-enter" href={enterHref} onClick={(event) => { event.preventDefault(); onEnter(); }}>Enter the Avenue<span className="button-shine" /></Link>
-          <button className="glass-button" type="button" onClick={onRules}>Read the rules</button>
-        </div>
-      </div>
-      <div className="opening-curtain opening-curtain-left" aria-hidden="true" />
-      <div className="opening-curtain opening-curtain-right" aria-hidden="true" />
-    </main>
   );
 }
 

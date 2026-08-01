@@ -16,13 +16,12 @@ import {
   HomeScreen,
   LoadingScreen,
   LobbyScreen,
-  OpeningScreen,
   RulesCard,
   SetupScreen,
   type SetupMode,
 } from "./ui/shared";
 
-type Screen = "opening" | "home" | "setup" | "loading" | "lobby" | "game";
+type Screen = "home" | "setup" | "loading" | "lobby" | "game";
 
 interface RoomApiResponse extends RoomPayload {
   credentials?: RoomCredentials;
@@ -80,9 +79,9 @@ function roomUrl(code: string) {
   return `${window.location.origin}${window.location.pathname}?room=${code}`;
 }
 
-export default function FortuneAvenueGame({ initialRoomCode = "", autoEnter = false }: { initialRoomCode?: string; autoEnter?: boolean }) {
+export default function FortuneAvenueGame({ initialRoomCode = "" }: { initialRoomCode?: string }) {
   const sanitizedInitialRoom = initialRoomCode.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
-  const [screen, setScreen] = useState<Screen>(autoEnter ? (sanitizedInitialRoom.length === 6 ? "loading" : "home") : "opening");
+  const [screen, setScreen] = useState<Screen>(sanitizedInitialRoom.length === 6 ? "loading" : "home");
   const [setupMode, setSetupMode] = useState<SetupMode>(sanitizedInitialRoom.length === 6 ? "join" : "bots");
   const [showRules, setShowRules] = useState(false);
   const [playerName, setPlayerName] = useState("Avenue Legend");
@@ -208,19 +207,15 @@ export default function FortuneAvenueGame({ initialRoomCode = "", autoEnter = fa
         setJoinCode(invitedCode);
         setSetupMode("join");
       }
-      if (currentUrl.searchParams.has("play")) {
-        currentUrl.searchParams.delete("play");
-        window.history.replaceState({}, "", currentUrl);
-      }
     });
     return () => window.cancelAnimationFrame(frame);
   }, []);
 
   useEffect(() => {
-    if (!autoEnter || sanitizedInitialRoom.length !== 6 || initialRoomHandled.current) return;
+    if (sanitizedInitialRoom.length !== 6 || initialRoomHandled.current) return;
     initialRoomHandled.current = true;
     void resumeCode(sanitizedInitialRoom);
-  }, [autoEnter, resumeCode, sanitizedInitialRoom]);
+  }, [resumeCode, sanitizedInitialRoom]);
 
   useEffect(() => {
     if (!state?.lastEvent || state.lastEvent.id === seenEvent.current) return;
@@ -253,17 +248,6 @@ export default function FortuneAvenueGame({ initialRoomCode = "", autoEnter = fa
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [acceptRoomResponse, credentials, fetchRoom, state]);
-
-  const enterAvenue = () => {
-    void audioContext.current?.resume();
-    if (joinCode.length === 6) {
-      const session = readSession(joinCode);
-      if (session) void resumeCode(joinCode);
-      else setScreen("setup");
-    } else setScreen("home");
-  };
-
-  const enterHref = joinCode.length === 6 ? `/?room=${encodeURIComponent(joinCode)}&play=1` : "/?play=1";
 
   const openSetup = (mode: SetupMode) => {
     setSetupMode(mode);
@@ -363,7 +347,6 @@ export default function FortuneAvenueGame({ initialRoomCode = "", autoEnter = fa
 
   return (
     <>
-      {screen === "opening" && <OpeningScreen enterHref={enterHref} onEnter={enterAvenue} onRules={() => setShowRules(true)} />}
       {screen === "home" && <HomeScreen recentRoom={recentRoom} onMode={openSetup} onResume={() => recentRoom && void resumeCode(recentRoom)} onRules={() => setShowRules(true)} />}
       {screen === "setup" && <SetupScreen mode={setupMode} name={playerName} setName={setPlayerName} pawnSlug={pawnSlug} setPawnSlug={setPawnSlug} theme={theme} setTheme={setTheme} playerCount={playerCount} setPlayerCount={setPlayerCount} botCount={botCount} setBotCount={setBotCount} joinCode={joinCode} setJoinCode={setJoinCode} onSubmit={submitSetup} onBack={() => setScreen("home")} busy={busy} error={error} />}
       {screen === "loading" && <LoadingScreen />}

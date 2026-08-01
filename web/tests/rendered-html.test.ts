@@ -11,18 +11,16 @@ test("ships the finished Fortune Avenue opening and social metadata", async () =
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../app/error.tsx", import.meta.url), "utf8"),
   ]);
-  assert.match(shared, /Enter the Avenue/);
-  assert.match(shared, /href=\{enterHref\}/);
-  assert.match(shared, /Read the rules/);
-  assert.match(shared, /GAME_TAGLINE/);
+  assert.doesNotMatch(shared, /OpeningScreen|Enter the Avenue/);
+  assert.match(shared, /Choose your chaos/);
   assert.match(layout, /Fortune Avenue — Play with bots or friends/);
   assert.match(layout, /og\.png/);
   assert.match(page, /FortuneAvenueGame/);
-  assert.match(page, /autoEnter/);
+  assert.doesNotMatch(page, /autoEnter|play\?:/);
   assert.match(game, /function storageGet/);
-  assert.match(styles, /\.opening-cover[\s\S]*?z-index: 0/);
-  assert.match(styles, /from \{ opacity: 0\.92/);
-  assert.doesNotMatch(styles, /\.opening-curtain[\s\S]{0,300}width: 51%/);
+  assert.doesNotMatch(game, /screen === "opening"|OpeningScreen/);
+  assert.match(game, /useState<Screen>\(sanitizedInitialRoom\.length === 6 \? "loading" : "home"\)/);
+  assert.match(styles, /\.home-menu \{[^}]*order: -1/);
   assert.match(errorScreen, /The Avenue needs one more roll/);
   assert.doesNotMatch(`${game}${shared}${layout}${page}`, /Your site is taking shape|codex-preview|react-loading-skeleton/i);
 });
