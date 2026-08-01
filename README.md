@@ -15,9 +15,10 @@ Fortune Avenue is an original physical board-game concept built around strange r
 - 48 event cards
   - 24 Lucky Break cards
   - 24 Plot Twist cards
+- Nine approved colorful resin player pawns with front, side, and back sculpt turnarounds
 - Original artwork for landmarks, transportation, services, corners, and event spaces
 - Individual card exports, full deck sheets, high-resolution boards, and phone-friendly previews
-- Structured game data and reproducible Python rendering tools
+- Structured game and pawn data with reproducible Python rendering tools
 
 ## View the game
 
@@ -37,16 +38,25 @@ Fortune Avenue is an original physical board-game concept built around strange r
 - [Plot Twist cards 01–12 — phone page](output/mobile/plot-twist-cards-01-12-mobile.jpg)
 - [Plot Twist cards 13–24 — phone page](output/mobile/plot-twist-cards-13-24-mobile.jpg)
 
+### Colorful resin pawns
+
+![Fortune Avenue nine-pawn concept lineup](assets/pawns/fortune-avenue-colorful-resin-pawns-concept-v2-heart-rig.png)
+
+- [All nine production sheets — high resolution](output/pawns/fortune-avenue-all-nine-pawn-production-sheets.png)
+- [All nine production sheets — phone preview](output/pawns/fortune-avenue-all-nine-pawns-mobile.jpg)
+- [Individual sculpt production sheets](output/pawns/production-sheets)
+- [Pawn dimensions and manufacturing guidance](docs/pawn-production-spec.md)
+
 Individual print-card images are available under [`output/cards`](output/cards), and the complete landmark artwork collection is under [`assets/landmarks`](assets/landmarks).
 
 ## Project structure
 
 ```text
-assets/       Landmark, board-concept, and special-space artwork
-docs/         Landmark roster and naming notes
-game-data/    Canonical 40-space layout and all 48 card effects
-output/       Full boards, card sheets, individual cards, and mobile previews
-tools/        Deterministic board/card renderers
+assets/       Landmark, board-concept, special-space, and pawn artwork
+docs/         Landmark roster, pawn specifications, and naming notes
+game-data/    Canonical board, event-card, and pawn production data
+output/       Boards, cards, mobile previews, and pawn production sheets
+tools/        Deterministic board, card, and pawn production renderers
 ```
 
 ## Rebuild the exports
@@ -57,9 +67,10 @@ Requires Python 3.10 or newer.
 python -m pip install -r requirements.txt
 python tools/render_fortune_avenue.py
 python tools/make_mobile_previews.py
+python tools/render_pawn_production_sheets.py
 ```
 
-The renderer validates the expected 40 board spaces, 24 cards per event deck, required artwork paths, and text-fitting constraints before finishing.
+The renderers validate the expected 40 board spaces, 24 cards per event deck, nine approved pawns, required artwork paths, and text-fitting constraints before finishing.
 
 ## Canonical production notes
 
