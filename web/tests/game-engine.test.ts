@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { access } from "node:fs/promises";
 import test from "node:test";
 import { LUCKY_CARDS, PAWNS, PLOT_CARDS, SPACE_BY_INDEX, SPACES } from "../lib/game-data";
 import {
@@ -38,6 +39,12 @@ test("uses the complete approved game collection", () => {
   assert.ok([...LUCKY_CARDS, ...PLOT_CARDS, ...PAWNS].every((item) => item.image.endsWith(".webp")));
 });
 
+test("includes every card image referenced by the game", async () => {
+  await Promise.all(
+    [...LUCKY_CARDS, ...PLOT_CARDS].map((card) => access(new URL(`../public${card.image}`, import.meta.url))),
+  );
+});
+
 test("adds a friend to a lobby without mutating the earlier room snapshot", () => {
   const source = lobby(0);
   const joined = addHumanPlayer(source, "friend", "Friend", "fortune-key");
@@ -62,6 +69,33 @@ test("runs a complete human turn followed by autonomous bot turns", () => {
   assert.equal(currentPlayer(state)?.id, "host");
   assert.ok(state.turnNumber >= 5);
   assert.ok(state.log.length > 4);
+});
+
+test("advances past a bot that goes bankrupt during its roll", () => {
+  let state = startGame(lobby(2));
+  state.currentPlayerIndex = 1;
+  state.players[1].bankrupt = true;
+  state.players[1].cash = 0;
+  state.players[2].cash = 100000;
+  state.rolled = true;
+
+  state = runBotTurns(state);
+
+  assert.equal(state.phase, "playing");
+  assert.equal(currentPlayer(state)?.id, "host");
+  assert.equal(state.rolled, false);
+});
+
+test("lets a bankrupt human close their turn so the match can finish", () => {
+  let state = startGame(lobby(1));
+  state.players[0].bankrupt = true;
+  state.players[0].cash = 0;
+  state.rolled = true;
+
+  state = applyRoomAction(state, "host", { type: "end-turn" });
+
+  assert.equal(state.phase, "finished");
+  assert.equal(state.winnerId, state.players[1].id);
 });
 
 test("survives repeated six-player rounds with purchases, cards, rent, and bot decisions", () => {

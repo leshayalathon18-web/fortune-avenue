@@ -2,6 +2,7 @@
 
 import type { FormEvent } from "react";
 import Image from "next/image";
+import { Crown, Dices, KeyRound } from "lucide-react";
 import { PAWNS } from "@/lib/game-data";
 import type { BoardTheme, FortuneGameState, PawnDefinition } from "@/lib/game-types";
 
@@ -94,15 +95,15 @@ export function HomeScreen({
         <div className="home-menu-stack">
           {recentRoom && <button className="resume-button" type="button" onClick={onResume}><span>Resume room</span><strong>{recentRoom}</strong></button>}
           <button className="menu-button emerald-action" type="button" onClick={() => onMode("bots")}>
-            <span className="menu-button-icon dice-mark"><i /><i /><i /><i /></span>
+            <span className="menu-button-icon quick-match-icon" aria-hidden="true"><Dices /></span>
             <span><strong>Quick match</strong><small>Play immediately with 1–5 bots</small></span>
           </button>
           <button className="menu-button crimson-action" type="button" onClick={() => onMode("friends")}>
-            <span className="menu-button-icon link-mark"><i /><i /></span>
+            <span className="menu-button-icon host-friends-icon" aria-hidden="true"><Crown /></span>
             <span><strong>Host friends</strong><small>Make a room, share a six-character code</small></span>
           </button>
           <button className="menu-button dark-action" type="button" onClick={() => onMode("join")}>
-            <span className="menu-button-icon key-mark">F</span>
+            <span className="menu-button-icon join-room-icon" aria-hidden="true"><KeyRound /></span>
             <span><strong>Join a room</strong><small>Enter a friend’s quick code</small></span>
           </button>
         </div>

@@ -914,11 +914,11 @@ function endTurn(state: FortuneGameState, player: PlayerState) {
   if (next) addEvent(state, "turn", `Round ${state.roundNumber}`, `${next.name}'s turn.`, { playerId: next.id });
 }
 
-function ensurePlayingTurn(state: FortuneGameState, playerId: string) {
+function ensurePlayingTurn(state: FortuneGameState, playerId: string, allowBankruptCleanup = false) {
   if (state.phase !== "playing") throw new Error("The game is not currently in play.");
   const player = currentPlayer(state);
   if (!player || player.id !== playerId) throw new Error("Wait for your turn.");
-  if (player.bankrupt) throw new Error("This player is no longer active.");
+  if (player.bankrupt && !allowBankruptCleanup) throw new Error("This player is no longer active.");
   return player;
 }
 
@@ -933,7 +933,7 @@ export function applyRoomAction(
     return startGame(state);
   }
 
-  const player = ensurePlayingTurn(state, playerId);
+  const player = ensurePlayingTurn(state, playerId, action.type === "end-turn");
   switch (action.type) {
     case "roll":
       if (state.rolled) throw new Error("You already rolled this turn.");

@@ -131,7 +131,7 @@ function SpaceInspector({ space, state, onClose }: { space: SpaceDefinition; sta
 
 export function CardReveal({ event, onClose }: { event: GameEvent; onClose: () => void }) {
   if (!event.card) return null;
-  return <div className={`modal-backdrop card-backdrop deck-${event.card.deck}`} role="presentation" onMouseDown={onClose}><section className="card-reveal" role="dialog" aria-modal="true" aria-label={`${event.card.title} card`} onMouseDown={(click) => click.stopPropagation()}><div className="card-aura" /><Image src={event.card.image} width={432} height={600} alt={`${event.card.title}: ${event.card.effect}`} /><div className="card-reveal-copy"><span>{event.card.deck === "lucky-break" ? "Lucky Break" : "Plot Twist"}</span><h2>{event.card.title}</h2><p>{event.message}</p><button className="gold-button compact" type="button" onClick={onClose}>Keep rolling</button></div></section></div>;
+  return <div className={`modal-backdrop card-backdrop deck-${event.card.deck}`} role="presentation" onMouseDown={onClose}><section className="card-reveal" role="dialog" aria-modal="true" aria-label={`${event.card.title} card`} onMouseDown={(click) => click.stopPropagation()}><div className="card-aura" /><Image src={event.card.image} width={432} height={600} alt={`${event.card.title}: ${event.card.effect}`} unoptimized /><div className="card-reveal-copy"><span>{event.card.deck === "lucky-break" ? "Lucky Break" : "Plot Twist"}</span><h2>{event.card.title}</h2><p>{event.message}</p><button className="gold-button compact" type="button" onClick={onClose}>Keep rolling</button></div></section></div>;
 }
 
 function WinnerReveal({ state, onRules }: { state: FortuneGameState; onRules: () => void }) {
