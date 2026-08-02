@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
 export default function LaunchPage() {
-  redirect("/opening.html?release=11");
+  redirect("/opening.html?release=12");
 }
