@@ -9,7 +9,9 @@ import {
   currentPlayer,
   netWorth,
   ownedProperties,
+  propertyPostedRent,
   propertyRent,
+  propertyRentPauseReason,
   runBotTurns,
   startGame,
 } from "../lib/game-engine";
@@ -505,7 +507,27 @@ test("requires a complete color district, then turns two crowns into a castle", 
     fees.push(propertyRent(state, state.properties["1"], 7));
   }
   assert.ok(fees.every((fee, index) => index === 0 || fee > fees[index - 1]));
+  assert.deepEqual(fees, [24, 30, 54, 96]);
   assert.equal(state.properties["1"].upgrades, 3);
   assert.equal(state.lastEvent?.title, "Castle crowned");
   assert.match(state.lastEvent?.message ?? "", /raised a castle/);
+});
+
+test("keeps a castle's posted fee visible while a temporary blackout pauses collection", () => {
+  const state = startGame(lobby(1));
+  for (const spaceIndex of [1, 2, 4, 5]) {
+    state.properties[String(spaceIndex)] = {
+      spaceIndex,
+      ownerId: "host",
+      upgrades: spaceIndex === 1 ? 3 : 0,
+      closedUntilTurn: 0,
+      rentMultiplierUntilTurn: 0,
+      nextVisitorFree: false,
+    };
+  }
+  state.modifiers.districtBlackout = { district: 0, untilTurn: state.turnNumber + 4 };
+
+  assert.equal(propertyPostedRent(state, state.properties["1"], 7), 96);
+  assert.equal(propertyRent(state, state.properties["1"], 7), 0);
+  assert.equal(propertyRentPauseReason(state, state.properties["1"]), "Neighborhood Blackout");
 });

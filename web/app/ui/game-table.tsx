@@ -11,7 +11,14 @@ import {
 import Image from "next/image";
 import { ArrowLeftRight, Castle, Check, Coins, Crown, Handshake, X } from "lucide-react";
 import { DISTRICTS, GAME_TAGLINE, LUCKY_CARDS, PAWNS, PLOT_CARDS, SPACE_BY_INDEX, SPACES } from "@/lib/game-data";
-import { currentPlayer, netWorth, ownedProperties, propertyRent } from "@/lib/game-engine";
+import {
+  currentPlayer,
+  netWorth,
+  ownedProperties,
+  propertyPostedRent,
+  propertyRent,
+  propertyRentPauseReason,
+} from "@/lib/game-engine";
 import {
   isShakeImpulse,
   SHAKE_HITS_REQUIRED,
@@ -19,11 +26,20 @@ import {
   SHAKE_SETTLE_MS,
   type MotionVector,
 } from "@/lib/shake-roll";
-import type { FortuneGameState, GameEvent, RoomAction, SpaceDefinition } from "@/lib/game-types";
+import type { FortuneGameState, GameEvent, PropertyState, RoomAction, SpaceDefinition } from "@/lib/game-types";
 import { GoldParticles, PawnPortrait } from "./shared";
 
 function money(value: number) {
   return `F${Math.max(0, Math.round(value)).toLocaleString()}`;
+}
+
+function propertyFeeCopy(state: FortuneGameState, property: PropertyState, label: string) {
+  const postedFee = propertyPostedRent(state, property, 7);
+  const currentFee = propertyRent(state, property, 7);
+  const pauseReason = propertyRentPauseReason(state, property);
+  if (pauseReason) return `${label} ${money(postedFee)} • ${pauseReason}: F0 now`;
+  if (currentFee !== postedFee) return `${label} ${money(postedFee)} • current ${money(currentFee)}`;
+  return `${label} ${money(postedFee)}`;
 }
 
 function pawnBySlug(slug: string) {
@@ -869,9 +885,9 @@ function DeedPanel({ state, playerId, onUpgrade, busy }: { state: FortuneGameSta
           const cost = Math.max(0, space.upgradeCost - (player?.upgradeDiscount ?? 0));
           const hasDistrict = ownsFullDistrict(state, playerId, space.district);
           const canUpgrade = space.kind === "landmark" && hasDistrict && property.upgrades < 3 && (player?.cash ?? 0) >= cost;
-          const nextFee = propertyRent(state, { ...property, upgrades: Math.min(3, property.upgrades + 1) }, 7);
+          const nextFee = propertyPostedRent(state, { ...property, upgrades: Math.min(3, property.upgrades + 1) }, 7);
           const buildLabel = property.upgrades === 2 ? "Castle" : "Crown";
-          return <article className={`deed-row ${hasDistrict ? "has-district" : ""}`} key={space.index} style={{ "--district-color": space.districtColor } as CSSProperties}><span className="deed-art" style={{ backgroundImage: `url(${space.asset})` }} /><div><strong>{space.name}</strong><span className="deed-builds" aria-label={property.upgrades === 3 ? "Castle built" : `${property.upgrades} crowns`}>{property.upgrades === 3 ? <Castle /> : Array.from({ length: property.upgrades }, (_, index) => <Crown key={index} />)}</span><small>{property.upgrades === 3 ? `Castle fee ${money(propertyRent(state, property, 7))}` : hasDistrict ? `${property.upgrades === 0 ? "District complete" : `${property.upgrades} ${property.upgrades === 1 ? "crown" : "crowns"}`} • next fee ${money(nextFee)}` : space.kind === "landmark" ? `Complete ${space.districtName} to add crowns` : `Entry fee ${money(propertyRent(state, property, 7))}`}</small></div>{space.kind === "landmark" && property.upgrades < 3 && <button type="button" className={!hasDistrict ? "is-locked" : ""} title={!hasDistrict ? `Own every ${space.districtName} landmark first` : `Add ${buildLabel.toLowerCase()} for ${money(cost)}`} disabled={busy || !canUpgrade || currentPlayer(state)?.id !== playerId} onClick={() => onUpgrade(space.index)}>{hasDistrict ? `${buildLabel} ${money(cost)}` : "Need set"}</button>}</article>;
+          return <article className={`deed-row ${hasDistrict ? "has-district" : ""}`} key={space.index} style={{ "--district-color": space.districtColor } as CSSProperties}><span className="deed-art" style={{ backgroundImage: `url(${space.asset})` }} /><div><strong>{space.name}</strong><span className="deed-builds" aria-label={property.upgrades === 3 ? "Castle built" : `${property.upgrades} crowns`}>{property.upgrades === 3 ? <Castle /> : Array.from({ length: property.upgrades }, (_, index) => <Crown key={index} />)}</span><small>{property.upgrades === 3 ? propertyFeeCopy(state, property, "Castle fee") : hasDistrict ? `${property.upgrades === 0 ? "District complete" : `${property.upgrades} ${property.upgrades === 1 ? "crown" : "crowns"}`} • next fee ${money(nextFee)}` : space.kind === "landmark" ? `Complete ${space.districtName} to add crowns` : propertyFeeCopy(state, property, "Entry fee")}</small></div>{space.kind === "landmark" && property.upgrades < 3 && <button type="button" className={!hasDistrict ? "is-locked" : ""} title={!hasDistrict ? `Own every ${space.districtName} landmark first` : `Add ${buildLabel.toLowerCase()} for ${money(cost)}`} disabled={busy || !canUpgrade || currentPlayer(state)?.id !== playerId} onClick={() => onUpgrade(space.index)}>{hasDistrict ? `${buildLabel} ${money(cost)}` : "Need set"}</button>}</article>;
         })}</div>
       )}
     </section>
@@ -885,11 +901,19 @@ function EventLog({ state }: { state: FortuneGameState }) {
 function SpaceInspector({ space, state, onClose }: { space: SpaceDefinition; state: FortuneGameState; onClose: () => void }) {
   const property = state.properties[String(space.index)];
   const owner = property ? state.players.find((player) => player.id === property.ownerId) : null;
+  const postedFee = property ? propertyPostedRent(state, property, 7) : space.baseRent;
+  const currentFee = property ? propertyRent(state, property, 7) : postedFee;
+  const pauseReason = property ? propertyRentPauseReason(state, property) : null;
+  const feeStatus = pauseReason
+    ? `${pauseReason} • F0 temporarily`
+    : property && currentFee !== postedFee
+      ? `${money(currentFee)} active right now`
+      : null;
   return (
     <div className="modal-backdrop inspector-backdrop" role="presentation" onMouseDown={onClose}>
       <section className="space-inspector" role="dialog" aria-modal="true" aria-labelledby="space-title" onMouseDown={(event) => event.stopPropagation()}>
         <button className="modal-close" type="button" onClick={onClose} aria-label="Close landmark details">×</button><div className="inspector-art" style={{ backgroundImage: `url(${space.asset})` }} /><div className="inspector-copy"><span className="inspector-kicker">Space {space.index} • {space.districtName ?? space.kind}</span><h2 id="space-title">{space.name}</h2>
-          {space.price > 0 ? <div className="inspector-stats"><span><small>{property ? "Estate value" : "Deed"}</small><strong>{money(space.price + (property?.upgrades ?? 0) * space.upgradeCost)}</strong></span><span><small>Entry fee</small><strong>{space.kind === "service" ? "Dice based" : property ? money(propertyRent(state, property, 7)) : money(space.baseRent)}</strong></span><span><small>Owner</small><strong>{owner?.name ?? "Available"}</strong></span><span><small>Build</small><strong>{property?.upgrades === 3 ? "Castle" : property?.upgrades ? `${property.upgrades} ${property.upgrades === 1 ? "crown" : "crowns"}` : "No crowns"}</strong></span></div> : <p className="inspector-effect">{space.kind === "lucky" ? "Draw a Lucky Break and let fortune show off." : space.kind === "plot" ? "Draw a Plot Twist and brace for nonsense." : space.index === 20 ? "Pay F60 in mysterious municipal fees." : space.index === 30 ? "Collect F90 from the festival crowd." : space.index === 10 ? "Usually just visiting—unless a card strands you here." : "Collect F200 whenever you pass this gold marquee."}</p>}
+          {space.price > 0 ? <div className="inspector-stats"><span><small>{property ? "Estate value" : "Deed"}</small><strong>{money(space.price + (property?.upgrades ?? 0) * space.upgradeCost)}</strong></span><span className={feeStatus ? "has-fee-status" : ""}><small>Posted entry fee</small><strong>{space.kind === "service" ? "Dice based" : money(postedFee)}</strong>{feeStatus && <em>{feeStatus}</em>}</span><span><small>Owner</small><strong>{owner?.name ?? "Available"}</strong></span><span><small>Build</small><strong>{property?.upgrades === 3 ? "Castle" : property?.upgrades ? `${property.upgrades} ${property.upgrades === 1 ? "crown" : "crowns"}` : "No crowns"}</strong></span></div> : <p className="inspector-effect">{space.kind === "lucky" ? "Draw a Lucky Break and let fortune show off." : space.kind === "plot" ? "Draw a Plot Twist and brace for nonsense." : space.index === 20 ? "Pay F60 in mysterious municipal fees." : space.index === 30 ? "Collect F90 from the festival crowd." : space.index === 10 ? "Usually just visiting—unless a card strands you here." : "Collect F200 whenever you pass this gold marquee."}</p>}
           {space.district !== null && <span className="district-tag" style={{ backgroundColor: space.districtColor }}>{DISTRICTS[space.district]}</span>}
         </div>
       </section>

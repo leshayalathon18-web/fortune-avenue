@@ -1873,7 +1873,7 @@ button.board-dice-control.can-roll:focus-visible { outline: 2px solid #fff1b0; o
 .deed-art { width: 42px; height: 42px; border-radius: 8px; background-position: center; background-size: cover; }
 .deed-row > div { min-width: 0; display: grid; gap: 0.15rem; }
 .deed-row strong { overflow: hidden; color: #e7ddc0; font-family: var(--display); font-size: 0.76rem; text-overflow: ellipsis; white-space: nowrap; }
-.deed-row small { overflow: hidden; color: #7f8780; font-size: 0.53rem; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
+.deed-row small { color: #8f9991; font-size: 0.53rem; line-height: 1.35; overflow-wrap: anywhere; }
 .deed-builds { min-height: 11px; display: flex; align-items: center; gap: 2px; color: #f1c95f; }
 .deed-builds:empty { display: none; }
 .deed-builds svg { width: 11px; height: 11px; fill: #c99626; filter: drop-shadow(0 0 3px rgba(245, 205, 101, 0.42)); }
@@ -1910,6 +1910,8 @@ button.board-dice-control.can-roll:focus-visible { outline: 2px solid #fff1b0; o
 .inspector-stats span { display: grid; gap: 0.2rem; padding: 0.75rem; border: 1px solid rgba(218, 177, 76, 0.22); border-radius: 10px; background: rgba(0, 0, 0, 0.2); }
 .inspector-stats small { color: #7e867f; font-size: 0.58rem; font-weight: 900; letter-spacing: 0.12em; text-transform: uppercase; }
 .inspector-stats strong { color: #eee2c1; font-family: var(--display); }
+.inspector-stats em { color: #f2c95e; font-size: 0.54rem; font-style: normal; font-weight: 900; line-height: 1.3; }
+.inspector-stats .has-fee-status { border-color: rgba(242, 201, 94, 0.5); background: linear-gradient(145deg, rgba(96, 12, 28, 0.26), rgba(0, 0, 0, 0.24)); }
 .inspector-effect { color: #c5c2b5; line-height: 1.6; }
 .district-tag { align-self: flex-start; margin-top: 1rem; padding: 0.35rem 0.55rem; border-radius: 999px; color: white; font-size: 0.58rem; font-weight: 900; text-transform: uppercase; }
 
