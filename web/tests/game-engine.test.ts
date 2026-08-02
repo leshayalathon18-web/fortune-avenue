@@ -9,6 +9,7 @@ import {
   currentPlayer,
   netWorth,
   ownedProperties,
+  propertyRent,
   runBotTurns,
   startGame,
 } from "../lib/game-engine";
@@ -25,6 +26,17 @@ function lobby(botCount = 1) {
     botCount,
     seed: 424242,
   });
+}
+
+function runBotsAndFoldHostAuctions(source: ReturnType<typeof startGame>) {
+  let state = runBotTurns(source);
+  let safety = 0;
+  while (state.phase === "playing" && state.auction?.currentBidderId === "host" && safety < 80) {
+    state = applyRoomAction(state, "host", { type: "auction-pass" });
+    state = runBotTurns(state);
+    safety += 1;
+  }
+  return state;
 }
 
 test("uses the complete approved game collection", () => {
@@ -65,7 +77,7 @@ test("runs a complete human turn followed by autonomous bot turns", () => {
     state = applyRoomAction(state, "host", state.players[0].cash >= space.price ? { type: "buy" } : { type: "skip-purchase" });
   }
   state = applyRoomAction(state, "host", { type: "end-turn" });
-  state = runBotTurns(state);
+  state = runBotsAndFoldHostAuctions(state);
   assert.equal(currentPlayer(state)?.id, "host");
   assert.ok(state.turnNumber >= 5);
   assert.ok(state.log.length > 4);
@@ -79,7 +91,7 @@ test("advances past a bot that goes bankrupt during its roll", () => {
   state.players[2].cash = 100000;
   state.rolled = true;
 
-  state = runBotTurns(state);
+  state = runBotsAndFoldHostAuctions(state);
 
   assert.equal(state.phase, "playing");
   assert.equal(currentPlayer(state)?.id, "host");
@@ -112,7 +124,7 @@ test("survives repeated six-player rounds with purchases, cards, rent, and bot d
       state = applyRoomAction(state, "host", action);
     }
     state = applyRoomAction(state, "host", { type: "end-turn" });
-    state = runBotTurns(state);
+    state = runBotsAndFoldHostAuctions(state);
   }
   assert.equal(state.phase, "playing");
   assert.ok(state.turnNumber > 70);
@@ -121,4 +133,96 @@ test("survives repeated six-player rounds with purchases, cards, rent, and bot d
   assert.ok(state.players.every((player) => Number.isFinite(netWorth(state, player.id))));
   assert.ok(state.log.length <= 60);
   assert.ok(ownedProperties(state, "host").length >= 0);
+});
+
+test("runs a live auction through bids, folds, and a final deed sale", () => {
+  const withFriend = addHumanPlayer(lobby(0), "friend", "Friend", "fortune-key");
+  let state = startGame(withFriend);
+  state.rolled = true;
+  state.pendingPurchase = 1;
+
+  state = applyRoomAction(state, "host", { type: "start-auction" });
+  assert.equal(state.pendingPurchase, null);
+  assert.equal(state.auction?.currentBidderId, "friend");
+
+  state = applyRoomAction(state, "friend", { type: "auction-bid", amount: 40 });
+  assert.equal(state.auction?.currentBid, 40);
+  assert.equal(state.auction?.currentBidderId, "host");
+
+  state = applyRoomAction(state, "host", { type: "auction-pass" });
+  assert.equal(state.auction, null);
+  assert.equal(state.properties["1"]?.ownerId, "friend");
+  assert.equal(state.players[1].cash, 1360);
+  assert.equal(state.lastEvent?.title, "Sold!");
+});
+
+test("records every dice move for step-by-step pawn travel", () => {
+  let state = startGame(lobby(1));
+  state = applyRoomAction(state, "host", { type: "roll" });
+  const movement = state.log.find((event) => event.type === "roll")?.movement;
+  assert.ok(movement);
+  assert.equal(movement.from, 0);
+  assert.equal(movement.to, state.players[0].position);
+  assert.equal(movement.steps, (state.dice?.[0] ?? 0) + (state.dice?.[1] ?? 0));
+  assert.equal(movement.direction, 1);
+});
+
+test("tags rent with its exact payer, recipient, and collectible amount", () => {
+  const withFriend = addHumanPlayer(lobby(0), "friend", "Friend", "fortune-key");
+  const initial = startGame(withFriend);
+  const probe = applyRoomAction(initial, "host", { type: "roll" });
+  const total = (probe.dice?.[0] ?? 0) + (probe.dice?.[1] ?? 0);
+  initial.players[0].position = ((1 - total) % SPACES.length + SPACES.length) % SPACES.length;
+  initial.properties["1"] = {
+    spaceIndex: 1,
+    ownerId: "friend",
+    upgrades: 0,
+    closedUntilTurn: 0,
+    rentMultiplierUntilTurn: 0,
+    nextVisitorFree: false,
+  };
+
+  const state = applyRoomAction(initial, "host", { type: "roll" });
+  const payment = state.log.find((event) => event.type === "rent")?.moneyTransfer;
+  assert.ok(payment);
+  assert.equal(payment.fromPlayerId, "host");
+  assert.equal(payment.toPlayerId, "friend");
+  assert.ok(payment.amount > 0);
+});
+
+test("requires a complete color district, then turns two crowns into a castle", () => {
+  const incomplete = startGame(lobby(1));
+  incomplete.properties["1"] = {
+    spaceIndex: 1,
+    ownerId: "host",
+    upgrades: 0,
+    closedUntilTurn: 0,
+    rentMultiplierUntilTurn: 0,
+    nextVisitorFree: false,
+  };
+  assert.throws(
+    () => applyRoomAction(incomplete, "host", { type: "upgrade", spaceIndex: 1 }),
+    /Own every Strange Beginnings landmark/,
+  );
+
+  let state = startGame(lobby(1));
+  for (const spaceIndex of [1, 2, 4, 5]) {
+    state.properties[String(spaceIndex)] = {
+      spaceIndex,
+      ownerId: "host",
+      upgrades: 0,
+      closedUntilTurn: 0,
+      rentMultiplierUntilTurn: 0,
+      nextVisitorFree: false,
+    };
+  }
+  const fees = [propertyRent(state, state.properties["1"], 7)];
+  for (let build = 1; build <= 3; build += 1) {
+    state = applyRoomAction(state, "host", { type: "upgrade", spaceIndex: 1 });
+    fees.push(propertyRent(state, state.properties["1"], 7));
+  }
+  assert.ok(fees.every((fee, index) => index === 0 || fee > fees[index - 1]));
+  assert.equal(state.properties["1"].upgrades, 3);
+  assert.equal(state.lastEvent?.title, "Castle crowned");
+  assert.match(state.lastEvent?.message ?? "", /raised a castle/);
 });

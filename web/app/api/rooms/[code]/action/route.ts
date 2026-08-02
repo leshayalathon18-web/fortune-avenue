@@ -4,7 +4,18 @@ import { ensureRoomSchema, loadRoom, saveRoom, verifySession } from "@/lib/room-
 
 export const dynamic = "force-dynamic";
 
-const ACTIONS = new Set(["start", "roll", "buy", "skip-purchase", "upgrade", "use-card", "end-turn"]);
+const ACTIONS = new Set([
+  "start",
+  "roll",
+  "buy",
+  "skip-purchase",
+  "start-auction",
+  "auction-bid",
+  "auction-pass",
+  "upgrade",
+  "use-card",
+  "end-turn",
+]);
 
 export async function POST(request: Request, context: { params: Promise<{ code: string }> }) {
   try {

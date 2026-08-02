@@ -11,7 +11,7 @@ import type {
   RoomPayload,
   SpaceDefinition,
 } from "@/lib/game-types";
-import { CardReveal, GameScreen } from "./ui/game-table";
+import { CardReveal, CashCollection, GameScreen } from "./ui/game-table";
 import {
   HomeScreen,
   LoadingScreen,
@@ -106,7 +106,12 @@ export default function FortuneAvenueGame({
   const [muted, setMuted] = useState(false);
   const [selectedSpace, setSelectedSpace] = useState<SpaceDefinition | null>(null);
   const [cardReveal, setCardReveal] = useState<GameEvent | null>(null);
+  const [pendingCard, setPendingCard] = useState<GameEvent | null>(null);
+  const [cashQueue, setCashQueue] = useState<GameEvent[]>([]);
+  const [pawnMotionBusy, setPawnMotionBusy] = useState(false);
   const seenEvent = useRef<string | null>(null);
+  const moneyRoom = useRef<string | null>(null);
+  const seenMoneyEvents = useRef(new Set<string>());
   const audioContext = useRef<AudioContext | null>(null);
   const initialRoomHandled = useRef(false);
 
@@ -233,9 +238,41 @@ export default function FortuneAvenueGame({
     playSound(state.lastEvent);
     if (state.lastEvent.card) {
       const event = state.lastEvent;
-      window.queueMicrotask(() => setCardReveal(event));
+      window.queueMicrotask(() => setPendingCard(event));
     }
   }, [playSound, state?.lastEvent]);
+
+  useEffect(() => {
+    if (!state || !you) return;
+    if (moneyRoom.current !== state.code) {
+      moneyRoom.current = state.code;
+      seenMoneyEvents.current = new Set(state.log.map((event) => event.id));
+      setCashQueue([]);
+      return;
+    }
+    const freshEvents = state.log
+      .filter((event) => !seenMoneyEvents.current.has(event.id))
+      .reverse();
+    freshEvents.forEach((event) => seenMoneyEvents.current.add(event.id));
+    const payments = freshEvents.filter(
+      (event) => event.moneyTransfer?.toPlayerId === you.playerId && (event.moneyTransfer?.amount ?? 0) > 0,
+    );
+    if (payments.length > 0) {
+      setCashQueue((queue) => {
+        const queuedIds = new Set(queue.map((event) => event.id));
+        return [...queue, ...payments.filter((event) => !queuedIds.has(event.id))];
+      });
+    }
+  }, [state, you]);
+
+  useEffect(() => {
+    if (!pendingCard || pawnMotionBusy || cashQueue.length > 0 || cardReveal) return;
+    const timer = window.setTimeout(() => {
+      setCardReveal(pendingCard);
+      setPendingCard(null);
+    }, 180);
+    return () => window.clearTimeout(timer);
+  }, [cardReveal, cashQueue.length, pawnMotionBusy, pendingCard]);
 
   useEffect(() => {
     if (!state || !credentials) return;
@@ -350,6 +387,10 @@ export default function FortuneAvenueGame({
     setState(null);
     setCredentials(null);
     setYou(null);
+    setCardReveal(null);
+    setPendingCard(null);
+    setCashQueue([]);
+    setPawnMotionBusy(false);
     const url = new URL(window.location.href);
     url.searchParams.delete("room");
     window.history.replaceState({}, "", url);
@@ -361,9 +402,10 @@ export default function FortuneAvenueGame({
       {screen === "setup" && <SetupScreen mode={setupMode} name={playerName} setName={setPlayerName} pawnSlug={pawnSlug} setPawnSlug={setPawnSlug} theme={theme} setTheme={setTheme} playerCount={playerCount} setPlayerCount={setPlayerCount} botCount={botCount} setBotCount={setBotCount} joinCode={joinCode} setJoinCode={setJoinCode} onSubmit={submitSetup} onBack={() => setScreen("home")} busy={busy} error={error} />}
       {screen === "loading" && <LoadingScreen />}
       {screen === "lobby" && state && you && <LobbyScreen state={state} you={you} onShare={shareRoom} onStart={() => sendAction({ type: "start" })} onRules={() => setShowRules(true)} busy={busy} />}
-      {screen === "game" && state && you && <GameScreen state={state} you={you} onAction={sendAction} onShare={shareRoom} onRules={() => setShowRules(true)} onHome={goHome} busy={busy} muted={muted} onToggleMuted={toggleMuted} selectedSpace={selectedSpace} setSelectedSpace={setSelectedSpace} />}
+      {screen === "game" && state && you && <GameScreen state={state} you={you} onAction={sendAction} onShare={shareRoom} onRules={() => setShowRules(true)} onHome={goHome} busy={busy} muted={muted} onToggleMuted={toggleMuted} onMotionChange={setPawnMotionBusy} selectedSpace={selectedSpace} setSelectedSpace={setSelectedSpace} />}
       {showRules && <RulesCard onClose={() => setShowRules(false)} />}
       {cardReveal && <CardReveal event={cardReveal} onClose={() => setCardReveal(null)} />}
+      {state && cashQueue[0] && !pawnMotionBusy && !showRules && !cardReveal && <CashCollection key={cashQueue[0].id} event={cashQueue[0]} state={state} onCollect={() => setCashQueue((queue) => queue.slice(1))} />}
       {toast && <div className="toast" role="status">{toast}</div>}
     </>
   );

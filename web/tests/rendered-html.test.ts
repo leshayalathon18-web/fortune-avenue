@@ -16,7 +16,7 @@ test("ships the finished Fortune Avenue opening and social metadata", async () =
     readFile(new URL("../app/error.tsx", import.meta.url), "utf8"),
   ]);
   assert.match(opening, /Enter the Avenue/);
-  assert.match(opening, /href="\/play\?release=7"/);
+  assert.match(opening, /href="\/play\?release=8"/);
   assert.match(opening, /z-index: 2147483647/);
   assert.match(opening, /\.panel \{[^}]*opacity: 1;[^}]*visibility: visible;/);
   assert.match(opening, /url\("\/og\.png"\)/);
@@ -24,8 +24,8 @@ test("ships the finished Fortune Avenue opening and social metadata", async () =
   assert.doesNotMatch(opening, /<script\b/i);
   assert.match(layout, /Fortune Avenue.+Play with bots or friends/);
   assert.match(layout, /og\.png/);
-  assert.match(page, /redirect\("\/opening\.html\?release=7"\)/);
-  assert.match(launchPage, /redirect\("\/opening\.html\?release=7"\)/);
+  assert.match(page, /redirect\("\/opening\.html\?release=8"\)/);
+  assert.match(launchPage, /redirect\("\/opening\.html\?release=8"\)/);
   assert.match(playPage, /FortuneAvenueGame/);
   assert.match(game, /function storageGet/);
   assert.match(shared, /src="\/og\.png"[\s\S]*unoptimized/);
@@ -35,6 +35,11 @@ test("ships the finished Fortune Avenue opening and social metadata", async () =
   assert.match(shared, /<KeyRound \/>/);
   assert.doesNotMatch(shared, /dice-mark|link-mark|key-mark/);
   assert.match(gameTable, /event\.card\.image[\s\S]*unoptimized/);
+  assert.match(gameTable, /const BOARD_LABELS/);
+  assert.match(gameTable, /type: "start-auction"/);
+  assert.match(gameTable, /export function CashCollection/);
+  assert.match(gameTable, /<Castle aria-hidden="true" \/>/);
+  assert.match(shared, /after 180 turns/);
   assert.doesNotMatch(`${game}${shared}`, /screen === "opening"|OpeningScreen/);
   assert.match(game, /useState<Screen>\(sanitizedInitialRoom\.length === 6 \? "loading" : "home"\)/);
   assert.match(styles, /\.home-menu \{[^}]*order: -1/);
@@ -45,6 +50,10 @@ test("ships the finished Fortune Avenue opening and social metadata", async () =
   assert.match(styles, /\.emerald-action \.menu-button-icon/);
   assert.match(styles, /\.crimson-action \.menu-button-icon/);
   assert.match(styles, /\.dark-action \.menu-button-icon/);
+  assert.match(styles, /\.space-name[\s\S]*overflow-wrap: normal/);
+  assert.match(styles, /\.auction-house/);
+  assert.match(styles, /\.cash-stack/);
+  assert.match(styles, /@keyframes pawn-step/);
   assert.match(styles, /\.setup-card,[\s\S]*max-width: 980px;[\s\S]*min-width: 0;/);
   assert.match(errorScreen, /The Avenue needs one more roll/);
   assert.doesNotMatch(`${game}${shared}${gameTable}${opening}${layout}${page}${launchPage}${playPage}`, /Your site is taking shape|codex-preview|react-loading-skeleton/i);

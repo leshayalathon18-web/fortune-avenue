@@ -27,9 +27,9 @@ const MAX_UPGRADES = 3;
 export const DEFAULT_SETTINGS = {
   startCash: 1400,
   passBonus: 200,
-  targetNetWorth: 3000,
-  requiredProperties: 6,
-  maxTurns: 80,
+  targetNetWorth: 5000,
+  requiredProperties: 8,
+  maxTurns: 180,
 } as const;
 
 export interface LobbyOptions {
@@ -45,7 +45,10 @@ export interface LobbyOptions {
 }
 
 function cloneState(state: FortuneGameState): FortuneGameState {
-  return JSON.parse(JSON.stringify(state)) as FortuneGameState;
+  const cloned = JSON.parse(JSON.stringify(state)) as FortuneGameState;
+  cloned.auction ??= null;
+  cloned.eventSequence ??= cloned.log.length;
+  return cloned;
 }
 
 function now() {
@@ -71,7 +74,8 @@ function shuffledIndices(state: FortuneGameState, length: number) {
 }
 
 function eventId(state: FortuneGameState) {
-  return `${state.turnNumber}-${state.log.length}-${state.rngSeed.toString(36)}`;
+  state.eventSequence = (state.eventSequence ?? 0) + 1;
+  return `${state.turnNumber}-${state.eventSequence}-${state.rngSeed.toString(36)}`;
 }
 
 function addEvent(
@@ -142,6 +146,7 @@ export function createLobbyState(options: LobbyOptions): FortuneGameState {
     dice: null,
     rolled: false,
     pendingPurchase: null,
+    auction: null,
     luckyDeck: [],
     plotDeck: [],
     luckyCursor: 0,
@@ -153,6 +158,7 @@ export function createLobbyState(options: LobbyOptions): FortuneGameState {
     },
     lastEvent: null,
     log: [],
+    eventSequence: 0,
     winnerId: null,
     rngSeed: options.seed || 8675309,
     settings: { ...DEFAULT_SETTINGS },
@@ -211,6 +217,7 @@ export function startGame(source: FortuneGameState) {
   state.dice = null;
   state.rolled = false;
   state.pendingPurchase = null;
+  state.auction = null;
   state.updatedAt = now();
   addEvent(
     state,
@@ -268,8 +275,13 @@ export function propertyRent(
 
   let rent = space.baseRent;
   if (space.kind === "landmark") {
-    rent = Math.round(rent * (1 + property.upgrades * 1.45));
-    if (space.district !== null && fullDistrictOwned(state, property.ownerId, space.district)) rent *= 2;
+    const crownMultipliers = [1, 2.5, 4.5, 8] as const;
+    rent = Math.round(rent * crownMultipliers[Math.min(MAX_UPGRADES, property.upgrades)]);
+    if (
+      property.upgrades === 0
+      && space.district !== null
+      && fullDistrictOwned(state, property.ownerId, space.district)
+    ) rent *= 2;
   } else if (space.kind === "transport") {
     const count = ownedProperties(state, property.ownerId)
       .filter((owned) => SPACE_BY_INDEX.get(owned.spaceIndex)?.kind === "transport").length;
@@ -415,6 +427,11 @@ function resolveOwnable(
   addEvent(state, "rent", "Entry fee", `${visitor.name} paid ${owner.name} F${paid} at ${space.name}.`, {
     playerId: visitor.id,
     spaceIndex: space.index,
+    moneyTransfer: {
+      fromPlayerId: visitor.id,
+      toPlayerId: owner.id,
+      amount: paid,
+    },
   });
 }
 
@@ -464,7 +481,12 @@ function freeUpgrade(state: FortuneGameState, player: PlayerState) {
       const space = SPACE_BY_INDEX.get(property.spaceIndex);
       return space ? [{ property, space }] : [];
     })
-    .filter((entry) => entry.space.kind === "landmark" && entry.property.upgrades < MAX_UPGRADES)
+    .filter(
+      (entry) => entry.space.kind === "landmark"
+        && entry.space.district !== null
+        && fullDistrictOwned(state, player.id, entry.space.district)
+        && entry.property.upgrades < MAX_UPGRADES,
+    )
     .sort((a, b) => a.space.upgradeCost - b.space.upgradeCost)[0];
   if (target) target.property.upgrades += 1;
   return target?.space.name ?? null;
@@ -545,7 +567,7 @@ function applyCardEffect(
       return `${player.name}'s penalties were cleared.`;
     case "Free Upgrade": {
       const upgraded = freeUpgrade(state, player);
-      return upgraded ? `${upgraded} received a free upgrade.` : "There was nothing to upgrade yet.";
+      return upgraded ? `${upgraded} received a free crown.` : "Complete a matching-color district before placing a crown.";
     }
     case "VIP Wristband":
       player.heldCards.push({ id: `vip-${state.turnNumber}-${state.rngSeed}`, title: card.title, effect: card.effect });
@@ -788,11 +810,18 @@ function rollDice(state: FortuneGameState, player: PlayerState) {
   const total = dice[0] + dice[1];
   const direction = player.reverseNext ? -1 : 1;
   player.reverseNext = false;
+  const from = player.position;
   moveBy(state, player, total * direction, direction > 0);
   const space = SPACE_BY_INDEX.get(player.position);
   addEvent(state, "roll", `${dice[0]} + ${dice[1]} = ${total}`, `${player.name} rolled to ${space?.name ?? "the avenue"}.`, {
     playerId: player.id,
     spaceIndex: player.position,
+    movement: {
+      from,
+      to: player.position,
+      steps: total,
+      direction,
+    },
   });
   resolveSpace(state, player, total);
 }
@@ -821,18 +850,154 @@ function buyPending(state: FortuneGameState, player: PlayerState) {
   });
 }
 
+function nextAuctionBidder(
+  state: FortuneGameState,
+  afterPlayerId: string,
+  eligibleBidderIds: string[],
+  highBidderId: string | null,
+) {
+  const startIndex = Math.max(0, state.players.findIndex((player) => player.id === afterPlayerId));
+  for (let offset = 1; offset <= state.players.length; offset += 1) {
+    const candidate = state.players[(startIndex + offset) % state.players.length];
+    if (
+      !candidate.bankrupt
+      && eligibleBidderIds.includes(candidate.id)
+      && candidate.id !== highBidderId
+    ) return candidate.id;
+  }
+  return null;
+}
+
+function settleAuction(state: FortuneGameState) {
+  const auction = state.auction;
+  if (!auction) return;
+  const space = SPACE_BY_INDEX.get(auction.spaceIndex);
+  const winner = auction.highBidderId
+    ? state.players.find((player) => player.id === auction.highBidderId) ?? null
+    : null;
+  state.auction = null;
+  if (!space || !winner || auction.currentBid <= 0 || winner.cash < auction.currentBid) {
+    addEvent(state, "auction", "Auction closed", `${space?.name ?? "The deed"} returns to the Avenue unclaimed.`, {
+      spaceIndex: auction.spaceIndex,
+    });
+    return;
+  }
+  winner.cash -= auction.currentBid;
+  state.properties[String(space.index)] = {
+    spaceIndex: space.index,
+    ownerId: winner.id,
+    upgrades: 0,
+    closedUntilTurn: 0,
+    rentMultiplierUntilTurn: 0,
+    nextVisitorFree: false,
+  };
+  addEvent(state, "auction", "Sold!", `${winner.name} won ${space.name} for F${auction.currentBid}.`, {
+    playerId: winner.id,
+    spaceIndex: space.index,
+  });
+}
+
+function startAuction(state: FortuneGameState, player: PlayerState) {
+  if (state.pendingPurchase === null) throw new Error("There is no deed waiting for auction.");
+  const space = SPACE_BY_INDEX.get(state.pendingPurchase);
+  if (!space || space.price <= 0 || propertyFor(state, space.index)) {
+    throw new Error("That deed is no longer available.");
+  }
+  const eligibleBidderIds = activePlayers(state).map((bidder) => bidder.id);
+  const currentBidderId = nextAuctionBidder(state, player.id, eligibleBidderIds, null);
+  state.pendingPurchase = null;
+  if (!currentBidderId) {
+    addEvent(state, "auction", "Auction closed", `${space.name} returns to the Avenue unclaimed.`, {
+      playerId: player.id,
+      spaceIndex: space.index,
+    });
+    return;
+  }
+  state.auction = {
+    spaceIndex: space.index,
+    currentBid: 0,
+    highBidderId: null,
+    eligibleBidderIds,
+    currentBidderId,
+    minimumIncrement: 10,
+    initiatedById: player.id,
+  };
+  addEvent(state, "auction", "Bidding is open", `${space.name} is on the block. Opening bid: F10.`, {
+    playerId: currentBidderId,
+    spaceIndex: space.index,
+  });
+}
+
+function auctionBid(state: FortuneGameState, playerId: string, amount: number) {
+  const auction = state.auction;
+  if (!auction) throw new Error("There is no live auction.");
+  if (auction.currentBidderId !== playerId) throw new Error("Wait for your bid.");
+  const bidder = state.players.find((player) => player.id === playerId);
+  const space = SPACE_BY_INDEX.get(auction.spaceIndex);
+  if (!bidder || bidder.bankrupt || !space) throw new Error("That bidder is no longer active.");
+  const minimum = auction.currentBid + auction.minimumIncrement;
+  const bid = Math.round(amount);
+  if (!Number.isFinite(bid) || bid < minimum) throw new Error(`The next bid is at least F${minimum}.`);
+  if (bid > bidder.cash) throw new Error(`You only have F${bidder.cash} available.`);
+  auction.currentBid = bid;
+  auction.highBidderId = bidder.id;
+  const nextBidderId = nextAuctionBidder(
+    state,
+    bidder.id,
+    auction.eligibleBidderIds,
+    auction.highBidderId,
+  );
+  addEvent(state, "auction", `F${bid} bid`, `${bidder.name} leads the auction for ${space.name}.`, {
+    playerId: bidder.id,
+    spaceIndex: space.index,
+  });
+  if (!nextBidderId) {
+    settleAuction(state);
+    return;
+  }
+  auction.currentBidderId = nextBidderId;
+}
+
+function auctionPass(state: FortuneGameState, playerId: string) {
+  const auction = state.auction;
+  if (!auction) throw new Error("There is no live auction.");
+  if (auction.currentBidderId !== playerId) throw new Error("Wait for your bid.");
+  const bidder = state.players.find((player) => player.id === playerId);
+  const space = SPACE_BY_INDEX.get(auction.spaceIndex);
+  auction.eligibleBidderIds = auction.eligibleBidderIds.filter((id) => id !== playerId);
+  addEvent(state, "auction", "Bidder folded", `${bidder?.name ?? "A bidder"} is out of the auction for ${space?.name ?? "the deed"}.`, {
+    playerId,
+    spaceIndex: auction.spaceIndex,
+  });
+  const nextBidderId = nextAuctionBidder(
+    state,
+    playerId,
+    auction.eligibleBidderIds,
+    auction.highBidderId,
+  );
+  if (!nextBidderId) {
+    settleAuction(state);
+    return;
+  }
+  auction.currentBidderId = nextBidderId;
+}
+
 function upgradeProperty(state: FortuneGameState, player: PlayerState, spaceIndex: number) {
   const property = propertyFor(state, spaceIndex);
   const space = SPACE_BY_INDEX.get(spaceIndex);
   if (!property || property.ownerId !== player.id || !space) throw new Error("You do not own that deed.");
   if (space.kind !== "landmark") throw new Error("Only landmarks can be upgraded.");
-  if (property.upgrades >= MAX_UPGRADES) throw new Error("That landmark is already fully upgraded.");
+  if (space.district === null || !fullDistrictOwned(state, player.id, space.district)) {
+    throw new Error(`Own every ${space.districtName ?? "matching-color"} landmark before adding crowns.`);
+  }
+  if (property.upgrades >= MAX_UPGRADES) throw new Error("That landmark already has its castle.");
   const cost = Math.max(0, space.upgradeCost - player.upgradeDiscount);
   if (player.cash < cost) throw new Error(`You need F${cost} for that upgrade.`);
   player.cash -= cost;
   player.upgradeDiscount = 0;
   property.upgrades += 1;
-  addEvent(state, "upgrade", `Upgrade ${property.upgrades}/3`, `${player.name} upgraded ${space.name} for F${cost}.`, {
+  const becameCastle = property.upgrades === MAX_UPGRADES;
+  addEvent(state, "upgrade", becameCastle ? "Castle crowned" : `Crown ${property.upgrades}/2`, `${player.name} ${becameCastle ? "raised a castle at" : "placed a crown on"} ${space.name} for F${cost}.`, {
     playerId: player.id,
     spaceIndex,
   });
@@ -863,6 +1028,7 @@ function declareWinner(state: FortuneGameState, player: PlayerState, reason: str
   state.phase = "finished";
   state.winnerId = player.id;
   state.pendingPurchase = null;
+  state.auction = null;
   addEvent(state, "winner", "Fortune Crowned", `${player.name} wins Fortune Avenue — ${reason}`, {
     playerId: player.id,
   });
@@ -880,7 +1046,11 @@ function checkWinner(state: FortuneGameState, candidate?: PlayerState) {
     && ownedProperties(state, candidate.id).length >= state.settings.requiredProperties
     && netWorth(state, candidate.id) >= state.settings.targetNetWorth
   ) {
-    declareWinner(state, candidate, `F${netWorth(state, candidate.id)} net worth and a six-deed empire.`);
+    declareWinner(
+      state,
+      candidate,
+      `F${netWorth(state, candidate.id)} net worth and ${state.settings.requiredProperties} deeds.`,
+    );
     return true;
   }
   if (state.turnNumber >= state.settings.maxTurns) {
@@ -893,13 +1063,15 @@ function checkWinner(state: FortuneGameState, candidate?: PlayerState) {
 
 function endTurn(state: FortuneGameState, player: PlayerState) {
   if (!state.rolled) throw new Error("Roll before ending your turn.");
-  if (state.pendingPurchase !== null) throw new Error("Buy or pass on the available deed first.");
+  if (state.pendingPurchase !== null) throw new Error("Buy the deed or start its auction first.");
+  if (state.auction) throw new Error("Finish the live auction before ending the turn.");
   if (checkWinner(state, player)) return;
 
   state.turnNumber += 1;
   state.dice = null;
   state.rolled = false;
   state.pendingPurchase = null;
+  state.auction = null;
 
   if (player.extraTurns > 0 && !player.bankrupt) {
     player.extraTurns -= 1;
@@ -933,6 +1105,18 @@ export function applyRoomAction(
     return startGame(state);
   }
 
+  if (state.auction) {
+    if (action.type === "auction-bid") auctionBid(state, playerId, action.amount);
+    else if (action.type === "auction-pass") auctionPass(state, playerId);
+    else throw new Error("The live auction must finish before the Avenue continues.");
+    state.updatedAt = now();
+    return state;
+  }
+
+  if (action.type === "auction-bid" || action.type === "auction-pass") {
+    throw new Error("There is no live auction.");
+  }
+
   const player = ensurePlayingTurn(state, playerId, action.type === "end-turn");
   switch (action.type) {
     case "roll":
@@ -948,6 +1132,9 @@ export function applyRoomAction(
       addEvent(state, "space", "Deed passed", `${player.name} left the deed on the market.`, {
         playerId: player.id,
       });
+      break;
+    case "start-auction":
+      startAuction(state, player);
       break;
     case "upgrade":
       upgradeProperty(state, player, action.spaceIndex);
@@ -978,17 +1165,43 @@ function botUpgradeTarget(state: FortuneGameState, bot: PlayerState) {
     })
     .filter(
       (entry) => entry.space.kind === "landmark"
+        && entry.space.district !== null
+        && fullDistrictOwned(state, bot.id, entry.space.district)
         && entry.property.upgrades < MAX_UPGRADES
         && bot.cash >= Math.max(0, entry.space.upgradeCost - bot.upgradeDiscount) + 300,
     )
     .sort((a, b) => b.space.baseRent - a.space.baseRent)[0] ?? null;
 }
 
+function botAuctionAction(state: FortuneGameState, bot: PlayerState): RoomAction {
+  const auction = state.auction;
+  if (!auction) return { type: "auction-pass" };
+  const space = SPACE_BY_INDEX.get(auction.spaceIndex);
+  if (!space) return { type: "auction-pass" };
+  const minimumBid = auction.currentBid + auction.minimumIncrement;
+  const reserve = 180 + state.roundNumber * 6;
+  const ownsInDistrict = space.district !== null
+    && ownedProperties(state, bot.id).some((property) => SPACE_BY_INDEX.get(property.spaceIndex)?.district === space.district);
+  const appetite = space.price * (ownsInDistrict ? 1.18 : 0.92) + randomInt(state, 8) * 10;
+  if (minimumBid > appetite || bot.cash - minimumBid < reserve) return { type: "auction-pass" };
+  const extraSteps = randomInt(state, 3);
+  const ambitiousBid = minimumBid + extraSteps * auction.minimumIncrement;
+  const affordableBid = Math.min(ambitiousBid, bot.cash - reserve);
+  return { type: "auction-bid", amount: Math.max(minimumBid, affordableBid) };
+}
+
 export function runBotTurns(source: FortuneGameState) {
   let state = cloneState(source);
   let safety = 0;
-  while (state.phase === "playing" && currentPlayer(state)?.isBot && safety < 72) {
+  while (state.phase === "playing" && safety < 160) {
     safety += 1;
+    if (state.auction) {
+      const bidder = state.players.find((player) => player.id === state.auction?.currentBidderId);
+      if (!bidder?.isBot) break;
+      state = applyRoomAction(state, bidder.id, botAuctionAction(state, bidder));
+      continue;
+    }
+    if (!currentPlayer(state)?.isBot) break;
     const bot = currentPlayer(state)!;
     const coin = bot.heldCards.find((card) => card.title === "Lucky Coin");
     if (!state.rolled) {
@@ -1001,7 +1214,7 @@ export function runBotTurns(source: FortuneGameState) {
       state = applyRoomAction(
         state,
         bot.id,
-        space && botWantsPurchase(state, bot, space) ? { type: "buy" } : { type: "skip-purchase" },
+        space && botWantsPurchase(state, bot, space) ? { type: "buy" } : { type: "start-auction" },
       );
       continue;
     }

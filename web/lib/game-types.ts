@@ -91,12 +91,36 @@ export interface CardEvent {
   image: string;
 }
 
+export interface MovementEvent {
+  from: number;
+  to: number;
+  steps: number;
+  direction: 1 | -1;
+}
+
+export interface MoneyTransferEvent {
+  fromPlayerId: string;
+  toPlayerId: string;
+  amount: number;
+}
+
+export interface AuctionState {
+  spaceIndex: number;
+  currentBid: number;
+  highBidderId: string | null;
+  eligibleBidderIds: string[];
+  currentBidderId: string;
+  minimumIncrement: number;
+  initiatedById: string;
+}
+
 export type GameEventType =
   | "room"
   | "turn"
   | "roll"
   | "space"
   | "purchase"
+  | "auction"
   | "rent"
   | "upgrade"
   | "card"
@@ -112,6 +136,8 @@ export interface GameEvent {
   playerId?: string;
   spaceIndex?: number;
   card?: CardEvent;
+  movement?: MovementEvent;
+  moneyTransfer?: MoneyTransferEvent;
   createdAt: string;
 }
 
@@ -142,6 +168,7 @@ export interface FortuneGameState {
   dice: [number, number] | null;
   rolled: boolean;
   pendingPurchase: number | null;
+  auction: AuctionState | null;
   luckyDeck: number[];
   plotDeck: number[];
   luckyCursor: number;
@@ -149,6 +176,7 @@ export interface FortuneGameState {
   modifiers: GameModifiers;
   lastEvent: GameEvent | null;
   log: GameEvent[];
+  eventSequence: number;
   winnerId: string | null;
   rngSeed: number;
   settings: FortuneSettings;
@@ -159,6 +187,9 @@ export type RoomAction =
   | { type: "roll" }
   | { type: "buy" }
   | { type: "skip-purchase" }
+  | { type: "start-auction" }
+  | { type: "auction-bid"; amount: number }
+  | { type: "auction-pass" }
   | { type: "upgrade"; spaceIndex: number }
   | { type: "use-card"; cardId: string }
   | { type: "end-turn" };

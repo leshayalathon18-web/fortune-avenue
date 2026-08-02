@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
 export default function Home() {
-  redirect("/opening.html?release=7");
+  redirect("/opening.html?release=8");
 }
