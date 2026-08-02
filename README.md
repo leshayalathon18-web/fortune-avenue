@@ -2,13 +2,13 @@
 
 > Roll in. Buy big. Cause chaos.
 
-[![Play Fortune Avenue](web/public/og.png)](https://fortune-avenue-play.wjedplant.chatgpt.site)
+[![Play Fortune Avenue](web/public/og.png)](https://fortune-avenue-live.spotifyps5email.chatgpt.site)
 
 Fortune Avenue is an original physical and browser-playable board game built around strange roadside landmarks, colorful resin pawns, and playful chaos.
 
 ## Play now
 
-**[Open the published Fortune Avenue game](https://fortune-avenue-play.wjedplant.chatgpt.site)**
+**[Open the published Fortune Avenue game](https://fortune-avenue-live.spotifyps5email.chatgpt.site)**
 
 - Play immediately with 1–5 autonomous bots.
 - Host persistent 2–6 player friend rooms with six-character codes and invite links.
@@ -65,7 +65,12 @@ game-data/    Canonical board, event-card, and pawn production data
 output/       Boards, cards, mobile previews, and pawn production sheets
 tools/        Deterministic physical-game production renderers
 web/          Published browser game, room API, optimized art, and tests
+itchio/       Branded itch.io HTML launcher and repeatable ZIP builder
 ```
+
+## Build the itch.io upload
+
+Run `powershell -NoProfile -ExecutionPolicy Bypass -File .\itchio\build-package.ps1`. It creates `releases/Fortune-Avenue-Itchio-v1.0.0.zip`, ready to upload as an itch.io HTML game. The lightweight launcher opens the hosted game so persistent rooms, friend codes, bots, and mobile shake dice continue to work.
 
 ## Browser-game validation
 
