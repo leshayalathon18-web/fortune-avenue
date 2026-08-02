@@ -78,9 +78,9 @@ export function HomeScreen({
       <GoldParticles />
       <section className="home-cover-card">
         <Image
-          src="/og.png"
-          width={1200}
-          height={630}
+          src="/og.png?cover=2"
+          width={1536}
+          height={1024}
           priority
           unoptimized
           alt="Fortune Avenue fantasy board with gold dice, crowned penguin, crowns, and castle"

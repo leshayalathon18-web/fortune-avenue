@@ -2,7 +2,7 @@
   "name": "Fortune Avenue",
   "short_name": "Fortune Ave",
   "description": "Roll in, buy big, and cause chaos with bots or friends.",
-  "start_url": "/opening.html?release=9",
+  "start_url": "/opening.html?release=10",
   "scope": "/",
   "display": "standalone",
   "orientation": "any",

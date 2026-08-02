@@ -169,7 +169,7 @@ button:disabled {
   position: absolute;
   inset: -3%;
   z-index: 0;
-  background: #07100d url("/cover.webp") center / cover no-repeat;
+  background: #07100d url("/cover.webp?cover=2") center / cover no-repeat;
   animation: launch-drift 10s ease-in-out infinite alternate;
 }
 
@@ -221,7 +221,7 @@ button:disabled {
   position: absolute;
   inset: -4%;
   z-index: 0;
-  background-image: url("/cover.webp");
+  background-image: url("/cover.webp?cover=2");
   background-position: center;
   background-size: cover;
   animation: cover-awaken 9s cubic-bezier(0.2, 0.65, 0.25, 1) both;
@@ -388,7 +388,7 @@ button:disabled {
   width: 100%;
   max-width: 960px;
   min-width: 0;
-  aspect-ratio: 40 / 21;
+  aspect-ratio: 3 / 2;
   justify-self: center;
   overflow: hidden;
   border: 1px solid rgba(236, 199, 107, 0.48);

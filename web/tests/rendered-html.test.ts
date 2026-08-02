@@ -16,21 +16,21 @@ test("ships the finished Fortune Avenue opening and social metadata", async () =
     readFile(new URL("../app/error.tsx", import.meta.url), "utf8"),
   ]);
   assert.match(opening, /Enter the Avenue/);
-  assert.match(opening, /href="\/play\?release=9"/);
+  assert.match(opening, /href="\/play\?release=10"/);
   assert.match(opening, /z-index: 2147483647/);
   assert.match(opening, /\.panel \{[^}]*opacity: 1;[^}]*visibility: visible;/);
-  assert.match(opening, /url\("\/og\.png"\)/);
+  assert.match(opening, /url\("\/og\.png\?cover=2"\)/);
   assert.match(opening, /2–6 players/);
   assert.doesNotMatch(opening, /<script\b/i);
   assert.match(layout, /Fortune Avenue.+Play with bots or friends/);
   assert.match(layout, /og\.png/);
-  assert.match(page, /redirect\("\/opening\.html\?release=9"\)/);
-  assert.match(launchPage, /redirect\("\/opening\.html\?release=9"\)/);
+  assert.match(page, /redirect\("\/opening\.html\?release=10"\)/);
+  assert.match(launchPage, /redirect\("\/opening\.html\?release=10"\)/);
   assert.match(playPage, /FortuneAvenueGame/);
   assert.match(game, /function storageGet/);
   assert.match(game, /seenCardEvents/);
   assert.match(game, /setCardQueue/);
-  assert.match(shared, /src="\/og\.png"[\s\S]*unoptimized/);
+  assert.match(shared, /src="\/og\.png\?cover=2"[\s\S]*unoptimized/);
   assert.match(shared, /import \{ Crown, Dices, KeyRound \} from "lucide-react"/);
   assert.match(shared, /<Dices \/>/);
   assert.match(shared, /<Crown \/>/);
@@ -54,7 +54,7 @@ test("ships the finished Fortune Avenue opening and social metadata", async () =
   assert.match(game, /useState<Screen>\(sanitizedInitialRoom\.length === 6 \? "loading" : "home"\)/);
   assert.match(styles, /\.home-menu \{[^}]*order: -1/);
   assert.match(styles, /grid-template-columns: minmax\(0, 1fr\)/);
-  assert.match(styles, /\.home-cover-card \{[^}]*aspect-ratio: 40 \/ 21/);
+  assert.match(styles, /\.home-cover-card \{[^}]*aspect-ratio: 3 \/ 2/);
   assert.match(styles, /\.menu-button-icon \{[\s\S]*place-items: center/);
   assert.match(styles, /\.menu-button-icon svg \{/);
   assert.match(styles, /\.emerald-action \.menu-button-icon/);

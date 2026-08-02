@@ -14,7 +14,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "localhost:3000";
   const protocol = requestHeaders.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
   const base = new URL(`${protocol}://${host}`);
-  const cover = new URL("/og.png", base).toString();
+  const cover = new URL("/og.png?cover=2", base).toString();
   return {
     metadataBase: base,
     title: "Fortune Avenue — Play with bots or friends",
@@ -34,7 +34,7 @@ export async function generateMetadata(): Promise<Metadata> {
       description: "Roll In. Buy Big. Cause Chaos. Start a persistent room for 2–6 players.",
       type: "website",
       url: base,
-      images: [{ url: cover, width: 1200, height: 630, alt: "Fortune Avenue fantasy board game with gold dice, a crowned penguin, and glowing landmarks" }],
+      images: [{ url: cover, width: 1536, height: 1024, alt: "Fortune Avenue fantasy board game with colorful pawns, gold dice, a crowned penguin, and glowing landmarks" }],
     },
     twitter: {
       card: "summary_large_image",
