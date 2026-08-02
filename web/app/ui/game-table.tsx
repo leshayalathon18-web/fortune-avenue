@@ -120,7 +120,7 @@ function ShakeDiceControl({
   onRoll: () => void;
 }) {
   const [motionMode, setMotionMode] = useState<MotionMode>("checking");
-  const [coarsePointer, setCoarsePointer] = useState(false);
+  const [coarsePointer, setCoarsePointer] = useState<boolean | null>(null);
   const [shakeActive, setShakeActive] = useState(false);
   const [rollCommitted, setRollCommitted] = useState(false);
   const [landed, setLanded] = useState(false);
@@ -135,6 +135,14 @@ function ShakeDiceControl({
   const landedTimer = useRef<number | null>(null);
   const sawBusy = useRef(false);
   const lastResult = useRef(`${firstValue}-${secondValue}`);
+  const wasCommitted = useRef(false);
+
+  const playSplat = useCallback(() => {
+    setLanded(true);
+    if (landedTimer.current !== null) window.clearTimeout(landedTimer.current);
+    if (navigator.vibrate) navigator.vibrate([28, 18, 46]);
+    landedTimer.current = window.setTimeout(() => setLanded(false), 980);
+  }, []);
 
   useEffect(() => {
     onRollRef.current = onRoll;
@@ -144,7 +152,8 @@ function ShakeDiceControl({
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
-      const coarse = window.matchMedia("(pointer: coarse)").matches || navigator.maxTouchPoints > 0;
+      const coarse = window.matchMedia("(pointer: coarse)").matches
+        || (navigator.maxTouchPoints > 0 && window.matchMedia("(hover: none)").matches);
       setCoarsePointer(coarse);
       if (!coarse || !("DeviceMotionEvent" in window)) {
         setMotionMode("fallback");
@@ -180,13 +189,21 @@ function ShakeDiceControl({
 
   useEffect(() => {
     const result = `${firstValue}-${secondValue}`;
+    let frame: number | null = null;
     if (lastResult.current !== result) {
       lastResult.current = result;
-      setLanded(true);
-      if (landedTimer.current !== null) window.clearTimeout(landedTimer.current);
-      landedTimer.current = window.setTimeout(() => setLanded(false), 720);
+      if (!rollCommitted) frame = window.requestAnimationFrame(playSplat);
     }
-  }, [firstValue, secondValue]);
+    return () => { if (frame !== null) window.cancelAnimationFrame(frame); };
+  }, [firstValue, playSplat, rollCommitted, secondValue]);
+
+  useEffect(() => {
+    const shouldSplat = wasCommitted.current && !rollCommitted;
+    wasCommitted.current = rollCommitted;
+    if (!shouldSplat) return;
+    const frame = window.requestAnimationFrame(playSplat);
+    return () => window.cancelAnimationFrame(frame);
+  }, [playSplat, rollCommitted]);
 
   const triggerRoll = useCallback(() => {
     if (!canRollRef.current || busyRef.current || rollLocked.current) return;
@@ -259,30 +276,29 @@ function ShakeDiceControl({
     if (landedTimer.current !== null) window.clearTimeout(landedTimer.current);
   }, []);
 
-  const enableMotionOrRoll = async () => {
+  const requestMotionPermission = async () => {
     if (!canRoll || busy || rollCommitted) return;
-    if (motionMode === "permission") {
-      const motionConstructor = window.DeviceMotionEvent as MotionPermissionConstructor;
-      try {
-        const permission = await motionConstructor.requestPermission?.();
-        setMotionMode(permission === "granted" ? "ready" : "fallback");
-      } catch {
-        setMotionMode("fallback");
-      }
-      return;
+    if (motionMode !== "permission") return;
+    const motionConstructor = window.DeviceMotionEvent as MotionPermissionConstructor;
+    try {
+      const permission = await motionConstructor.requestPermission?.();
+      setMotionMode(permission === "granted" ? "ready" : "fallback");
+    } catch {
+      setMotionMode("fallback");
     }
-    triggerRoll();
   };
 
   const prompt = visualRolling
-    ? shakeActive ? "Keep shaking - release to roll" : "Dice tumbling on the Avenue"
+    ? shakeActive ? "Keep shaking - stop to drop" : "Dice airborne - incoming splat"
     : motionMode === "permission"
-      ? "Tap dice once to enable shake"
-      : motionMode === "ready" && coarsePointer
-        ? "Shake phone - stop to roll"
-        : coarsePointer
-          ? "Tap dice to roll"
-          : "Click dice to roll";
+      ? "Enable motion once - then shake"
+      : motionMode === "ready" && coarsePointer === true
+        ? "Shake phone - stop to splat"
+        : coarsePointer === true
+          ? "Motion access is required"
+          : coarsePointer === false
+            ? "Click dice to roll"
+            : "Checking motion sensor";
   const displayedDice: [number, number] = visualRolling ? previewDice : [firstValue, secondValue];
   const dice = (
     <>
@@ -292,19 +308,36 @@ function ShakeDiceControl({
       </span>
       {canRoll && <span className="dice-instruction" role="status" aria-live="polite">{prompt}</span>}
       <span className="dice-motion-streaks" aria-hidden="true"><i /><i /><i /></span>
+      <span className="dice-impact" aria-hidden="true"><i /><i /><i /><i /><i /><i /><i /><i /></span>
     </>
   );
 
   if (!canRoll) {
-    return <div className={`board-dice-control is-passive ${landed ? "is-landed" : ""}`} aria-label={`Dice show ${firstValue} and ${secondValue}`}>{dice}</div>;
+    return <div className={`board-dice-control is-passive ${coarsePointer === true ? "mobile-shake-only" : ""} ${landed ? "is-landed" : ""}`} aria-label={`Dice show ${firstValue} and ${secondValue}`}>{dice}</div>;
+  }
+  if (coarsePointer === null) {
+    return <div className="board-dice-control can-roll is-input-checking" aria-label="Checking the motion sensor">{dice}</div>;
+  }
+  if (coarsePointer) {
+    return (
+      <div
+        className={`board-dice-control can-roll mobile-shake-only ${visualRolling ? "is-tumbling" : ""} ${shakeActive ? "is-shaking" : ""} ${landed ? "is-landed" : ""}`}
+        role="group"
+        aria-label={motionMode === "ready" ? "Shake the phone, then stop to roll the dice" : "Phone motion access is required to roll the dice"}
+      >
+        {dice}
+        {motionMode === "permission" && <button className="motion-permission-button" type="button" disabled={busy || rollCommitted} onClick={() => void requestMotionPermission()}>Enable shake dice</button>}
+        {motionMode === "fallback" && <span className="motion-unavailable">Allow motion access in your browser settings to roll.</span>}
+      </div>
+    );
   }
   return (
     <button
       className={`board-dice-control can-roll ${visualRolling ? "is-tumbling" : ""} ${shakeActive ? "is-shaking" : ""} ${landed ? "is-landed" : ""}`}
       type="button"
       disabled={busy || rollCommitted}
-      aria-label={motionMode === "permission" ? "Enable phone shake for the dice" : coarsePointer ? "Shake phone or tap dice to roll" : "Click dice to roll"}
-      onClick={() => void enableMotionOrRoll()}
+      aria-label="Click dice to roll"
+      onClick={triggerRoll}
     >
       {dice}
     </button>
