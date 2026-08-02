@@ -269,7 +269,7 @@ function fullDistrictOwned(state: FortuneGameState, ownerId: string, district: n
     && districtSpaces.every((space) => state.properties[String(space.index)]?.ownerId === ownerId);
 }
 
-export function propertyRent(
+export function propertyPostedRent(
   state: FortuneGameState,
   property: PropertyState,
   diceTotal: number,
@@ -278,16 +278,6 @@ export function propertyRent(
   if (!space) return 0;
   const owner = state.players.find((player) => player.id === property.ownerId);
   if (!owner) return 0;
-
-  if (state.modifiers.freeAdmissionUntilTurn >= state.turnNumber) return 0;
-  if (property.closedUntilTurn >= state.turnNumber) return 0;
-  if (property.closedUntilOwnerVisit) return 0;
-  if (
-    space.district !== null
-    && state.modifiers.districtBlackout
-    && state.modifiers.districtBlackout.untilTurn >= state.turnNumber
-    && state.modifiers.districtBlackout.district === space.district
-  ) return 0;
 
   let rent = space.baseRent;
   if (space.kind === "landmark") {
@@ -308,6 +298,36 @@ export function propertyRent(
     rent = diceTotal * (count >= 2 ? 10 : 4);
   }
 
+  return Math.round(rent);
+}
+
+export function propertyRentPauseReason(
+  state: FortuneGameState,
+  property: PropertyState,
+) {
+  const space = SPACE_BY_INDEX.get(property.spaceIndex);
+  if (!space) return null;
+  if (state.modifiers.freeAdmissionUntilTurn >= state.turnNumber) return "Free Admission Day";
+  if (property.closedUntilTurn >= state.turnNumber) return "Inspection closure";
+  if (property.closedUntilOwnerVisit) return "Sudden Rebrand";
+  if (
+    space.district !== null
+    && state.modifiers.districtBlackout
+    && state.modifiers.districtBlackout.untilTurn >= state.turnNumber
+    && state.modifiers.districtBlackout.district === space.district
+  ) return "Neighborhood Blackout";
+  return null;
+}
+
+export function propertyRent(
+  state: FortuneGameState,
+  property: PropertyState,
+  diceTotal: number,
+) {
+  const owner = state.players.find((player) => player.id === property.ownerId);
+  if (!owner || propertyRentPauseReason(state, property)) return 0;
+
+  let rent = propertyPostedRent(state, property, diceTotal);
   if (property.rentMultiplierUntilTurn >= state.turnNumber) rent *= 2;
   if (owner.rentBoostUntilTurn >= state.turnNumber) rent *= 2;
   if ((property.rentDiscountUntilTurn ?? 0) >= state.turnNumber) rent *= 0.5;
