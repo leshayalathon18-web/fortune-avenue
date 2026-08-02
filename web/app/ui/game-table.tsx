@@ -10,7 +10,7 @@ import {
 } from "react";
 import Image from "next/image";
 import { ArrowLeftRight, Castle, Check, Coins, Crown, Handshake, X } from "lucide-react";
-import { DISTRICTS, GAME_TAGLINE, PAWNS, PLOT_CARDS, SPACE_BY_INDEX, SPACES } from "@/lib/game-data";
+import { DISTRICTS, GAME_TAGLINE, LUCKY_CARDS, PAWNS, PLOT_CARDS, SPACE_BY_INDEX, SPACES } from "@/lib/game-data";
 import { currentPlayer, netWorth, ownedProperties, propertyRent } from "@/lib/game-engine";
 import {
   isShakeImpulse,
@@ -655,6 +655,84 @@ function LandmarkStealModal({ state, youId, onAction, busy }: { state: FortuneGa
   );
 }
 
+const CARD_CHOICE_COPY: Record<string, { heading: string; prompt: string }> = {
+  "Scenic Shortcut": { heading: "Pick your shortcut", prompt: "Choose the exact landmark where you want to arrive. The destination resolves normally." },
+  "Grand Reopening": { heading: "Choose the headliner", prompt: "Pick one of your landmarks to charge double until your next turn." },
+  "Friendly Inspector": { heading: "Clear one penalty", prompt: "Choose the closure, route penalty, or missed turn you want removed." },
+  "Free Upgrade": { heading: "Place the free crown", prompt: "Choose one eligible landmark in a complete district. The crown costs nothing." },
+  "Influencer Visit": { heading: "Choose the hot spot", prompt: "Pick the landmark getting the crowd; every other player pays you F15." },
+  "Midnight Pass": { heading: "Choose your ride", prompt: "Pick either transport stop. You move there without paying an entry fee." },
+  "Position Upgrade": { heading: "Choose who to swap", prompt: "Pick one player. You exchange board positions and they collect F20." },
+  "Big Break": { heading: "Choose your break", prompt: "Take guaranteed cash or move exactly six spaces and resolve where you land." },
+  "Surprise Inspection": { heading: "Pay or close", prompt: "Pay F20, or choose one of your landmarks to close until your next turn." },
+  "Review Bomb": { heading: "Choose the target", prompt: "Pick one of your landmarks. Its entry fee is cut in half until your next turn." },
+  "Neighborhood Blackout": { heading: "Choose one district", prompt: "Tap the district that will collect no entry fees until your next turn." },
+  "Celebrity Entourage": { heading: "Choose the guest list", prompt: "Pick the landmark whose next visitor enters free. You also collect F50." },
+  "Lost Luggage": { heading: "Pay or take the train", prompt: "Pay F40 and stay put, or move to The Midnight Express and end your turn." },
+  "Sudden Rebrand": { heading: "Choose the rebrand", prompt: "Pick one landmark to close. It reopens when you personally visit it." },
+};
+
+function CardChoiceModal({ state, youId, onAction, busy }: { state: FortuneGameState; youId: string; onAction: (action: RoomAction) => void; busy: boolean }) {
+  const choice = state.cardChoice;
+  if (!choice) return null;
+  const chooser = state.players.find((player) => player.id === choice.playerId);
+  const isChooser = choice.playerId === youId;
+  const cards = choice.deck === "lucky-break" ? LUCKY_CARDS : PLOT_CARDS;
+  const card = cards.find((candidate) => candidate.title === choice.cardTitle);
+  const copy = CARD_CHOICE_COPY[choice.cardTitle] ?? { heading: "Make your choice", prompt: card?.effect ?? "Choose one option to continue." };
+  const choose = (selection: string) => onAction({ type: "resolve-card-choice", selection });
+  const spaces = choice.eligibleSpaceIndexes.flatMap((spaceIndex) => {
+    const space = SPACE_BY_INDEX.get(spaceIndex);
+    const property = state.properties[String(spaceIndex)];
+    const owner = property ? state.players.find((player) => player.id === property.ownerId) : null;
+    return space ? [{ space, property, owner }] : [];
+  });
+
+  const spaceAction = (space: SpaceDefinition, property: FortuneGameState["properties"][string] | undefined) => {
+    if (choice.cardTitle === "Scenic Shortcut") return property ? `Land here • fee ${money(propertyRent(state, property, 7))}` : `Land here • deed ${money(space.price)}`;
+    if (choice.cardTitle === "Free Upgrade") return "Add one free crown";
+    if (choice.cardTitle === "Review Bomb") return `Halve ${money(property ? propertyRent(state, property, 7) : space.baseRent)} fee`;
+    if (choice.cardTitle === "Surprise Inspection") return "Close instead of paying";
+    if (choice.cardTitle === "Midnight Pass") return "Ride here free";
+    if (choice.cardTitle === "Sudden Rebrand") return "Close until your visit";
+    if (choice.cardTitle === "Celebrity Entourage") return "Next visitor enters free";
+    if (choice.cardTitle === "Grand Reopening") return `Double ${money(property ? propertyRent(state, property, 7) : space.baseRent)} fee`;
+    return "Choose this landmark";
+  };
+
+  return (
+    <div className={`steal-backdrop card-choice-backdrop deck-${choice.deck}`} role="presentation">
+      <section className="steal-landmark card-choice-panel" role="dialog" aria-modal="true" aria-labelledby="card-choice-title">
+        <div className="steal-card-art card-choice-art">{card && <Image src={card.image} width={432} height={600} alt={`${card.title}: ${card.effect}`} unoptimized />}</div>
+        <div className="steal-copy card-choice-copy">
+          <span className="steal-kicker">{choice.deck === "lucky-break" ? "Lucky Break decision" : "Plot Twist decision"}</span>
+          <h2 id="card-choice-title">{isChooser ? copy.heading : `${chooser?.name ?? "A player"} is choosing`}</h2>
+          <p>{isChooser ? copy.prompt : `The table is paused while ${chooser?.name ?? "the player"} finishes ${choice.cardTitle}.`}</p>
+          <div className="card-choice-options">
+            {choice.options.includes("cash") && <button type="button" disabled={!isChooser || busy} onClick={() => choose("cash")}><span className="choice-medallion"><Coins /></span><span><small>Guaranteed payout</small><strong>Take F60</strong><em>Stay on your current space</em></span></button>}
+            {choice.options.includes("move-six") && <button type="button" disabled={!isChooser || busy} onClick={() => choose("move-six")}><span className="choice-medallion choice-six">6</span><span><small>Resolve the destination</small><strong>Move six spaces</strong><em>Land on {SPACE_BY_INDEX.get(((chooser?.position ?? 0) + 6) % SPACES.length)?.name}</em></span></button>}
+            {choice.options.includes("pay-20") && <button type="button" disabled={!isChooser || busy} onClick={() => choose("pay-20")}><span className="choice-medallion"><Coins /></span><span><small>Keep every deed open</small><strong>Pay F20</strong><em>Take the quick inspection fee</em></span></button>}
+            {choice.options.includes("pay-40") && <button type="button" disabled={!isChooser || busy} onClick={() => choose("pay-40")}><span className="choice-medallion"><Coins /></span><span><small>Stay where you are</small><strong>Pay F40</strong><em>Continue your turn normally</em></span></button>}
+            {choice.options.includes("midnight-express") && <button type="button" disabled={!isChooser || busy} onClick={() => choose("midnight-express")}><span className="choice-medallion choice-ticket">FA</span><span><small>End the turn after moving</small><strong>Take Midnight Express</strong><em>Move directly to the transport stop</em></span></button>}
+            {choice.options.includes("skip-turn") && <button type="button" disabled={!isChooser || busy} onClick={() => choose("skip-turn")}><span className="choice-medallion"><Check /></span><span><small>Inspector correction</small><strong>Clear missed turn</strong><em>Your next movement is restored</em></span></button>}
+            {choice.options.includes("reverse-next") && <button type="button" disabled={!isChooser || busy} onClick={() => choose("reverse-next")}><span className="choice-medallion"><ArrowLeftRight /></span><span><small>Inspector correction</small><strong>Clear reverse route</strong><em>Your next roll moves clockwise</em></span></button>}
+            {choice.eligibleDistricts.map((district) => {
+              const districtSpaces = SPACES.filter((space) => space.district === district);
+              return <button className="district-choice" key={district} type="button" disabled={!isChooser || busy} style={{ "--district-color": districtSpaces[0]?.districtColor ?? "#d8b24f" } as CSSProperties} onClick={() => choose(`district:${district}`)}><span className="district-choice-art">{districtSpaces.map((space) => <i key={space.index} style={{ backgroundImage: `url(${space.asset})` }} />)}</span><span><small>District {district + 1}</small><strong>{DISTRICTS[district]}</strong><em>{districtSpaces.map((space) => space.name).join(" • ")}</em></span></button>;
+            })}
+            {choice.eligiblePlayerIds.map((playerId) => {
+              const target = state.players.find((player) => player.id === playerId);
+              return target ? <button className="player-choice" key={target.id} type="button" disabled={!isChooser || busy} onClick={() => choose(`player:${target.id}`)}><PawnPortrait pawn={pawnBySlug(target.pawnSlug)} /><span><small>Space {target.position} • {money(target.cash)}</small><strong>Swap with {target.name}</strong><em>They collect F20</em></span></button> : null;
+            })}
+            {spaces.map(({ space, property, owner }) => <button className="space-choice" key={space.index} type="button" disabled={!isChooser || busy} style={{ "--district-color": space.districtColor } as CSSProperties} onClick={() => choose(`space:${space.index}`)}><span className="choice-space-art" style={{ backgroundImage: `url(${space.asset})` }} /> <span><small>{space.districtName ?? space.kind}{owner ? ` • ${owner.name}` : " • Available"}</small><strong>{space.name}</strong><em>{spaceAction(space, property)}</em></span>{owner ? <PawnPortrait pawn={pawnBySlug(owner.pawnSlug)} /> : <span className="choice-space-price">{money(space.price)}</span>}</button>)}
+          </div>
+          <div className="steal-instruction"><i /> {isChooser ? "Tap one option to finish the card" : `Waiting for ${chooser?.name ?? "the player"}`}</div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 export function CashCollection({
   event,
   state,
@@ -901,6 +979,8 @@ export function GameScreen({ state, you, onAction, onShare, onRules, onHome, bus
     && state.pendingPurchase === null
     && !state.auction
     && !state.tradeOffer
+    && !state.cardChoice
+    && !state.landmarkStealChoice
     && state.players.some((player) => player.id !== you.playerId && !player.bankrupt);
   return (
     <main className={`game-screen theme-${state.theme}`}>
@@ -911,6 +991,7 @@ export function GameScreen({ state, you, onAction, onShare, onRules, onHome, bus
       {tradeOpen && !state.tradeOffer && <TradeBuilder state={state} youId={you.playerId} onAction={onAction} onClose={() => setTradeOpen(false)} busy={busy} />}
       {state.tradeOffer && <TradeOfferModal state={state} youId={you.playerId} onAction={onAction} busy={busy} />}
       {state.landmarkStealChoice && <LandmarkStealModal state={state} youId={you.playerId} onAction={onAction} busy={busy} />}
+      {state.cardChoice && <CardChoiceModal state={state} youId={you.playerId} onAction={onAction} busy={busy} />}
       {selectedSpace && <SpaceInspector space={selectedSpace} state={state} onClose={() => setSelectedSpace(null)} />}
       {state.phase === "finished" && <WinnerReveal state={state} onRules={onRules} />}
     </main>

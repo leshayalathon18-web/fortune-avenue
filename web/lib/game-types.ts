@@ -72,6 +72,8 @@ export interface PropertyState {
   upgrades: number;
   closedUntilTurn: number;
   rentMultiplierUntilTurn: number;
+  rentDiscountUntilTurn?: number;
+  closedUntilOwnerVisit?: boolean;
   nextVisitorFree: boolean;
 }
 
@@ -132,6 +134,19 @@ export interface LandmarkStealChoice {
   eligibleSpaceIndexes: number[];
 }
 
+export type CardChoiceKind = "space" | "district" | "player" | "decision" | "penalty";
+
+export interface CardChoice {
+  playerId: string;
+  cardTitle: string;
+  deck: CardDeck;
+  kind: CardChoiceKind;
+  eligibleSpaceIndexes: number[];
+  eligiblePlayerIds: string[];
+  eligibleDistricts: number[];
+  options: string[];
+}
+
 export type GameEventType =
   | "room"
   | "turn"
@@ -190,6 +205,7 @@ export interface FortuneGameState {
   auction: AuctionState | null;
   tradeOffer: TradeOffer | null;
   landmarkStealChoice: LandmarkStealChoice | null;
+  cardChoice: CardChoice | null;
   luckyDeck: number[];
   plotDeck: number[];
   luckyCursor: number;
@@ -216,6 +232,7 @@ export type RoomAction =
   | { type: "trade-accept" }
   | { type: "trade-decline" }
   | { type: "steal-landmark"; spaceIndex: number }
+  | { type: "resolve-card-choice"; selection: string }
   | { type: "upgrade"; spaceIndex: number }
   | { type: "use-card"; cardId: string }
   | { type: "end-turn" };

@@ -39,6 +39,76 @@ function runBotsAndFoldHostAuctions(source: ReturnType<typeof startGame>) {
   return state;
 }
 
+function firstCardChoiceSelection(state: ReturnType<typeof startGame>) {
+  const choice = state.cardChoice;
+  if (!choice) throw new Error("No card choice is open.");
+  if (choice.cardTitle === "Big Break") return "cash";
+  if (choice.cardTitle === "Surprise Inspection") return "pay-20";
+  if (choice.cardTitle === "Lost Luggage") return "pay-40";
+  if (choice.options.length > 0) return choice.options[0];
+  if (choice.eligibleSpaceIndexes.length > 0) return `space:${choice.eligibleSpaceIndexes[0]}`;
+  if (choice.eligiblePlayerIds.length > 0) return `player:${choice.eligiblePlayerIds[0]}`;
+  if (choice.eligibleDistricts.length > 0) return `district:${choice.eligibleDistricts[0]}`;
+  throw new Error(`No selectable option for ${choice.cardTitle}.`);
+}
+
+function resolveOpenHostChoices(source: ReturnType<typeof startGame>) {
+  let state = source;
+  let safety = 0;
+  while (state.cardChoice?.playerId === "host" && safety < 10) {
+    state = applyRoomAction(state, "host", { type: "resolve-card-choice", selection: firstCardChoiceSelection(state) });
+    safety += 1;
+  }
+  if (state.landmarkStealChoice?.playerId === "host") {
+    state = applyRoomAction(state, "host", { type: "steal-landmark", spaceIndex: state.landmarkStealChoice.eligibleSpaceIndexes[0] });
+  }
+  return state;
+}
+
+function drawSpecificCard(source: ReturnType<typeof startGame>, deck: "lucky-break" | "plot-twist", title: string) {
+  const cards = deck === "lucky-break" ? LUCKY_CARDS : PLOT_CARDS;
+  const index = cards.findIndex((card) => card.title === title);
+  assert.notEqual(index, -1, `${title} should exist`);
+  const probe = applyRoomAction(source, "host", { type: "roll" });
+  const total = (probe.dice?.[0] ?? 0) + (probe.dice?.[1] ?? 0);
+  const cardSpace = deck === "lucky-break" ? 3 : 9;
+  source.players[0].position = ((cardSpace - total) % SPACES.length + SPACES.length) % SPACES.length;
+  if (deck === "lucky-break") {
+    source.luckyDeck = [index];
+    source.luckyCursor = 0;
+  } else {
+    source.plotDeck = [index];
+    source.plotCursor = 0;
+  }
+  return applyRoomAction(source, "host", { type: "roll" });
+}
+
+function choiceReadyState() {
+  const withFriend = addHumanPlayer(lobby(0), "friend", "Friend", "fortune-key");
+  const state = startGame(withFriend);
+  for (const spaceIndex of [1, 2, 4, 5]) {
+    state.properties[String(spaceIndex)] = {
+      spaceIndex,
+      ownerId: "host",
+      purchasePrice: SPACE_BY_INDEX.get(spaceIndex)?.price ?? 100,
+      upgrades: 0,
+      closedUntilTurn: 0,
+      rentMultiplierUntilTurn: 0,
+      nextVisitorFree: false,
+    };
+  }
+  state.properties["7"] = {
+    spaceIndex: 7,
+    ownerId: "friend",
+    purchasePrice: SPACE_BY_INDEX.get(7)?.price ?? 140,
+    upgrades: 0,
+    closedUntilTurn: 0,
+    rentMultiplierUntilTurn: 0,
+    nextVisitorFree: false,
+  };
+  return state;
+}
+
 test("uses the complete approved game collection", () => {
   assert.equal(SPACES.length, 40);
   assert.equal(new Set(SPACES.map((space) => space.index)).size, 40);
@@ -119,6 +189,11 @@ test("survives repeated six-player rounds with purchases, cards, rent, and bot d
   for (let round = 0; round < 18 && state.phase === "playing"; round += 1) {
     assert.equal(currentPlayer(state)?.id, "host");
     state = applyRoomAction(state, "host", { type: "roll" });
+    state = resolveOpenHostChoices(state);
+    if (currentPlayer(state)?.id !== "host") {
+      state = runBotsAndFoldHostAuctions(state);
+      continue;
+    }
     if (state.pendingPurchase !== null) {
       const space = SPACE_BY_INDEX.get(state.pendingPurchase)!;
       const action = state.players[0].cash >= space.price + 150 ? { type: "buy" as const } : { type: "skip-purchase" as const };
@@ -286,6 +361,82 @@ test("Steal a Landmark lets the drawer select an exact rival deed and pays its r
   assert.equal(state.players[1].cash, 1473);
   assert.equal(state.lastEvent?.title, "Landmark taken!");
   assert.equal(state.lastEvent?.moneyTransfer?.amount, 73);
+});
+
+test("every card that promises a player decision opens real selectable options", () => {
+  const decisionCards = [
+    ["lucky-break", "Scenic Shortcut"],
+    ["lucky-break", "Grand Reopening"],
+    ["lucky-break", "Friendly Inspector"],
+    ["lucky-break", "Free Upgrade"],
+    ["lucky-break", "Influencer Visit"],
+    ["lucky-break", "Midnight Pass"],
+    ["lucky-break", "Position Upgrade"],
+    ["lucky-break", "Big Break"],
+    ["plot-twist", "Surprise Inspection"],
+    ["plot-twist", "Review Bomb"],
+    ["plot-twist", "Neighborhood Blackout"],
+    ["plot-twist", "Celebrity Entourage"],
+    ["plot-twist", "Lost Luggage"],
+    ["plot-twist", "Sudden Rebrand"],
+  ] as const;
+
+  for (const [deck, title] of decisionCards) {
+    const initial = choiceReadyState();
+    if (title === "Friendly Inspector") initial.properties["1"].closedUntilTurn = 99;
+    const state = drawSpecificCard(initial, deck, title);
+    assert.equal(state.cardChoice?.cardTitle, title, `${title} should wait for the drawer's choice`);
+    assert.equal(state.cardChoice?.playerId, "host");
+    assert.ok(
+      (state.cardChoice?.eligibleSpaceIndexes.length ?? 0) > 0
+        || (state.cardChoice?.eligiblePlayerIds.length ?? 0) > 0
+        || (state.cardChoice?.eligibleDistricts.length ?? 0) > 0
+        || (state.cardChoice?.options.length ?? 0) > 0,
+      `${title} should expose at least one selectable option`,
+    );
+  }
+});
+
+test("Neighborhood Blackout waits for the exact district selected by the drawer", () => {
+  let state = drawSpecificCard(choiceReadyState(), "plot-twist", "Neighborhood Blackout");
+  assert.equal(state.modifiers.districtBlackout, null);
+  assert.deepEqual(state.cardChoice?.eligibleDistricts, [0, 1, 2, 3, 4, 5]);
+  assert.throws(() => applyRoomAction(state, "host", { type: "end-turn" }), /Neighborhood Blackout choice/);
+
+  state = applyRoomAction(state, "host", { type: "resolve-card-choice", selection: "district:4" });
+  assert.equal(state.cardChoice, null);
+  assert.equal(state.modifiers.districtBlackout?.district, 4);
+  assert.match(state.lastEvent?.message ?? "", /Midnight Commerce/);
+});
+
+test("landmark card choices apply only to the deed the player taps", () => {
+  let reopening = drawSpecificCard(choiceReadyState(), "lucky-break", "Grand Reopening");
+  reopening = applyRoomAction(reopening, "host", { type: "resolve-card-choice", selection: "space:4" });
+  assert.equal(reopening.properties["1"].rentMultiplierUntilTurn, 0);
+  assert.ok(reopening.properties["4"].rentMultiplierUntilTurn >= reopening.turnNumber);
+
+  let review = drawSpecificCard(choiceReadyState(), "plot-twist", "Review Bomb");
+  const fullFee = propertyRent(review, review.properties["2"], 7);
+  review = applyRoomAction(review, "host", { type: "resolve-card-choice", selection: "space:2" });
+  assert.equal(propertyRent(review, review.properties["2"], 7), Math.round(fullFee / 2));
+  assert.equal(review.properties["1"].rentDiscountUntilTurn ?? 0, 0);
+
+  let rebrand = drawSpecificCard(choiceReadyState(), "plot-twist", "Sudden Rebrand");
+  rebrand = applyRoomAction(rebrand, "host", { type: "resolve-card-choice", selection: "space:5" });
+  assert.equal(rebrand.properties["5"].closedUntilOwnerVisit, true);
+  assert.equal(propertyRent(rebrand, rebrand.properties["5"], 7), 0);
+});
+
+test("Big Break honors the six-space option and resolves its destination", () => {
+  let state = drawSpecificCard(choiceReadyState(), "lucky-break", "Big Break");
+  assert.equal(state.players[0].position, 3);
+  const cashBefore = state.players[0].cash;
+  state.plotDeck = [PLOT_CARDS.findIndex((card) => card.title === "GPS Glitch")];
+  state.plotCursor = 0;
+  state = applyRoomAction(state, "host", { type: "resolve-card-choice", selection: "move-six" });
+  assert.equal(state.players[0].position, 9);
+  assert.equal(state.players[0].cash, cashBefore);
+  assert.ok(state.log.some((event) => event.title === "Six-space break" && event.movement?.steps === 6));
 });
 
 test("records every dice move for step-by-step pawn travel", () => {

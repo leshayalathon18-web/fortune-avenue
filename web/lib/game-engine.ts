@@ -1,5 +1,6 @@
 import {
   BOT_NAMES,
+  DISTRICTS,
   LUCKY_CARDS,
   PAWNS,
   PLAYER_COLORS,
@@ -50,6 +51,11 @@ function cloneState(state: FortuneGameState): FortuneGameState {
   if (cloned.auction) cloned.auction.participantIds ??= activePlayers(cloned).map((player) => player.id);
   cloned.tradeOffer ??= null;
   cloned.landmarkStealChoice ??= null;
+  cloned.cardChoice ??= null;
+  for (const property of Object.values(cloned.properties)) {
+    property.rentDiscountUntilTurn ??= 0;
+    property.closedUntilOwnerVisit ??= false;
+  }
   cloned.eventSequence ??= cloned.log.length;
   return cloned;
 }
@@ -152,6 +158,7 @@ export function createLobbyState(options: LobbyOptions): FortuneGameState {
     auction: null,
     tradeOffer: null,
     landmarkStealChoice: null,
+    cardChoice: null,
     luckyDeck: [],
     plotDeck: [],
     luckyCursor: 0,
@@ -225,6 +232,7 @@ export function startGame(source: FortuneGameState) {
   state.auction = null;
   state.tradeOffer = null;
   state.landmarkStealChoice = null;
+  state.cardChoice = null;
   state.updatedAt = now();
   addEvent(
     state,
@@ -273,6 +281,7 @@ export function propertyRent(
 
   if (state.modifiers.freeAdmissionUntilTurn >= state.turnNumber) return 0;
   if (property.closedUntilTurn >= state.turnNumber) return 0;
+  if (property.closedUntilOwnerVisit) return 0;
   if (
     space.district !== null
     && state.modifiers.districtBlackout
@@ -301,6 +310,7 @@ export function propertyRent(
 
   if (property.rentMultiplierUntilTurn >= state.turnNumber) rent *= 2;
   if (owner.rentBoostUntilTurn >= state.turnNumber) rent *= 2;
+  if ((property.rentDiscountUntilTurn ?? 0) >= state.turnNumber) rent *= 0.5;
   if (state.modifiers.marketDipUntilTurn >= state.turnNumber) rent = Math.max(0, rent - 10);
   return Math.round(rent);
 }
@@ -399,6 +409,14 @@ function resolveOwnable(
     return;
   }
   if (property.ownerId === visitor.id) {
+    if (property.closedUntilOwnerVisit) {
+      property.closedUntilOwnerVisit = false;
+      addEvent(state, "fortune", "Rebrand complete", `${visitor.name} reopened ${space.name} by visiting it.`, {
+        playerId: visitor.id,
+        spaceIndex: space.index,
+      });
+      return;
+    }
     addEvent(state, "space", "Back on your block", `${visitor.name} landed on their own ${space.name}.`, {
       playerId: visitor.id,
       spaceIndex: space.index,
@@ -482,8 +500,14 @@ function lowestOwnedProperty(state: FortuneGameState, playerId: string) {
     .sort((a, b) => a.space.price - b.space.price)[0] ?? null;
 }
 
-function freeUpgrade(state: FortuneGameState, player: PlayerState) {
-  const target = ownedProperties(state, player.id)
+function ownedLandmarkIndexes(state: FortuneGameState, playerId: string) {
+  return ownedProperties(state, playerId)
+    .filter((property) => SPACE_BY_INDEX.get(property.spaceIndex)?.kind === "landmark")
+    .map((property) => property.spaceIndex);
+}
+
+function freeUpgradeIndexes(state: FortuneGameState, player: PlayerState) {
+  return ownedProperties(state, player.id)
     .flatMap((property) => {
       const space = SPACE_BY_INDEX.get(property.spaceIndex);
       return space ? [{ property, space }] : [];
@@ -494,9 +518,35 @@ function freeUpgrade(state: FortuneGameState, player: PlayerState) {
         && fullDistrictOwned(state, player.id, entry.space.district)
         && entry.property.upgrades < MAX_UPGRADES,
     )
-    .sort((a, b) => a.space.upgradeCost - b.space.upgradeCost)[0];
-  if (target) target.property.upgrades += 1;
-  return target?.space.name ?? null;
+    .map((entry) => entry.space.index);
+}
+
+function districtAtPosition(position: number) {
+  for (let offset = 0; offset < BOARD_SIZE; offset += 1) {
+    const space = SPACE_BY_INDEX.get((position - offset + BOARD_SIZE) % BOARD_SIZE);
+    if (space?.kind === "landmark" && space.district !== null) return space.district;
+  }
+  return 0;
+}
+
+function beginCardChoice(
+  state: FortuneGameState,
+  player: PlayerState,
+  card: CardDefinition,
+  choice: Partial<Omit<NonNullable<FortuneGameState["cardChoice"]>, "playerId" | "cardTitle" | "deck">>
+    & Pick<NonNullable<FortuneGameState["cardChoice"]>, "kind">,
+) {
+  state.cardChoice = {
+    playerId: player.id,
+    cardTitle: card.title,
+    deck: card.deck,
+    kind: choice.kind,
+    eligibleSpaceIndexes: choice.eligibleSpaceIndexes ?? [],
+    eligiblePlayerIds: choice.eligiblePlayerIds ?? [],
+    eligibleDistricts: choice.eligibleDistricts ?? [],
+    options: choice.options ?? [],
+  };
+  return `${player.name} must make the choice on the table.`;
 }
 
 function stealableLandmarks(state: FortuneGameState, player: PlayerState) {
@@ -550,6 +600,225 @@ function chooseLandmarkSteal(state: FortuneGameState, playerId: string, spaceInd
   });
 }
 
+function chosenSpace(
+  state: FortuneGameState,
+  choice: NonNullable<FortuneGameState["cardChoice"]>,
+  selection: string,
+) {
+  const match = /^space:(\d+)$/.exec(selection);
+  const spaceIndex = match ? Number(match[1]) : Number.NaN;
+  if (!Number.isInteger(spaceIndex) || !choice.eligibleSpaceIndexes.includes(spaceIndex)) {
+    throw new Error("Choose one of the highlighted spaces for this card.");
+  }
+  const space = SPACE_BY_INDEX.get(spaceIndex);
+  if (!space) throw new Error("That space is no longer available.");
+  return space;
+}
+
+function addCardMovement(
+  state: FortuneGameState,
+  player: PlayerState,
+  destination: number,
+  title: string,
+  message: string,
+  resolveDestination: boolean,
+) {
+  const from = player.position;
+  const steps = (destination - from + BOARD_SIZE) % BOARD_SIZE;
+  moveBy(state, player, steps);
+  addEvent(state, "card", title, message, {
+    playerId: player.id,
+    spaceIndex: destination,
+    movement: { from, to: destination, steps, direction: 1 },
+  });
+  if (resolveDestination) resolveSpace(state, player, 7, 1);
+}
+
+function resolveCardChoice(state: FortuneGameState, playerId: string, selection: string) {
+  const choice = state.cardChoice;
+  if (!choice) throw new Error("There is no card choice waiting on the table.");
+  if (choice.playerId !== playerId) throw new Error("Only the player who drew the card can make this choice.");
+  const player = state.players.find((candidate) => candidate.id === playerId);
+  if (!player || player.bankrupt) throw new Error("That player is no longer available.");
+  const turnsToNext = Math.max(2, activePlayers(state).length);
+
+  switch (choice.cardTitle) {
+    case "Scenic Shortcut": {
+      const space = chosenSpace(state, choice, selection);
+      state.cardChoice = null;
+      addCardMovement(state, player, space.index, "Shortcut chosen", `${player.name} picked ${space.name} and cruised there.`, true);
+      return;
+    }
+    case "Grand Reopening": {
+      const space = chosenSpace(state, choice, selection);
+      const property = propertyFor(state, space.index);
+      if (!property || property.ownerId !== player.id) throw new Error("You no longer own that landmark.");
+      property.rentMultiplierUntilTurn = state.turnNumber + turnsToNext;
+      state.cardChoice = null;
+      addEvent(state, "card", "Grand reopening selected", `${space.name} is charging double until ${player.name}'s next turn.`, { playerId, spaceIndex: space.index });
+      return;
+    }
+    case "Friendly Inspector": {
+      if (selection === "skip-turn" && choice.options.includes(selection)) {
+        player.skipTurns = 0;
+        state.cardChoice = null;
+        addEvent(state, "card", "Timeout cleared", `${player.name}'s missed-turn penalty was removed.`, { playerId });
+        return;
+      }
+      if (selection === "reverse-next" && choice.options.includes(selection)) {
+        player.reverseNext = false;
+        state.cardChoice = null;
+        addEvent(state, "card", "Route restored", `${player.name}'s counterclockwise penalty was removed.`, { playerId });
+        return;
+      }
+      const space = chosenSpace(state, choice, selection);
+      const property = propertyFor(state, space.index);
+      if (!property || property.ownerId !== player.id) throw new Error("That penalty is no longer attached to your deed.");
+      property.closedUntilTurn = 0;
+      property.closedUntilOwnerVisit = false;
+      property.rentDiscountUntilTurn = 0;
+      state.cardChoice = null;
+      addEvent(state, "card", "Inspection passed", `${space.name}'s closure and fee penalty were removed.`, { playerId, spaceIndex: space.index });
+      return;
+    }
+    case "Free Upgrade": {
+      const space = chosenSpace(state, choice, selection);
+      const property = propertyFor(state, space.index);
+      if (!property || property.ownerId !== player.id || !freeUpgradeIndexes(state, player).includes(space.index)) {
+        throw new Error("That landmark is no longer eligible for a free crown.");
+      }
+      property.upgrades += 1;
+      state.cardChoice = null;
+      addEvent(state, "upgrade", property.upgrades === MAX_UPGRADES ? "Free castle!" : "Free crown!", `${player.name} upgraded ${space.name} at no cost.`, { playerId, spaceIndex: space.index });
+      return;
+    }
+    case "Influencer Visit": {
+      const space = chosenSpace(state, choice, selection);
+      const property = propertyFor(state, space.index);
+      if (!property || property.ownerId !== player.id) throw new Error("You no longer own that landmark.");
+      let collected = 0;
+      for (const other of activePlayers(state).filter((candidate) => candidate.id !== player.id)) {
+        collected += transfer(state, other, player, 15);
+      }
+      state.cardChoice = null;
+      addEvent(state, "card", "Influencer booked", `${player.name} sent the crowd to ${space.name} and collected F${collected}.`, { playerId, spaceIndex: space.index });
+      return;
+    }
+    case "Midnight Pass": {
+      const space = chosenSpace(state, choice, selection);
+      if (space.kind !== "transport") throw new Error("Choose one of the two transport spaces.");
+      state.cardChoice = null;
+      addCardMovement(state, player, space.index, "Midnight ride", `${player.name} chose ${space.name} and rode there free.`, false);
+      return;
+    }
+    case "Position Upgrade": {
+      const match = /^player:(.+)$/.exec(selection);
+      const targetId = match?.[1] ?? "";
+      if (!choice.eligiblePlayerIds.includes(targetId)) throw new Error("Choose one of the available players.");
+      const target = state.players.find((candidate) => candidate.id === targetId && !candidate.bankrupt);
+      if (!target) throw new Error("That player is no longer available.");
+      const playerFrom = player.position;
+      const targetFrom = target.position;
+      player.position = targetFrom;
+      target.position = playerFrom;
+      target.cash += 20;
+      state.cardChoice = null;
+      addEvent(state, "card", "Positions swapped", `${player.name} traded places with ${target.name}; ${target.name} collected F20.`, {
+        playerId: player.id,
+        spaceIndex: player.position,
+        movement: { from: playerFrom, to: player.position, steps: (player.position - playerFrom + BOARD_SIZE) % BOARD_SIZE, direction: 1 },
+      });
+      addEvent(state, "card", "Swap complete", `${target.name} arrived at ${SPACE_BY_INDEX.get(target.position)?.name ?? "the Avenue"}.`, {
+        playerId: target.id,
+        spaceIndex: target.position,
+        movement: { from: targetFrom, to: target.position, steps: (target.position - targetFrom + BOARD_SIZE) % BOARD_SIZE, direction: 1 },
+      });
+      return;
+    }
+    case "Big Break": {
+      if (!choice.options.includes(selection)) throw new Error("Choose cash or the six-space move.");
+      state.cardChoice = null;
+      if (selection === "cash") {
+        player.cash += 60;
+        addEvent(state, "card", "Cash break", `${player.name} chose the guaranteed F60.`, { playerId });
+      } else {
+        const destination = (player.position + 6) % BOARD_SIZE;
+        addCardMovement(state, player, destination, "Six-space break", `${player.name} chose to move exactly six spaces.`, true);
+      }
+      return;
+    }
+    case "Surprise Inspection": {
+      if (selection === "pay-20" && choice.options.includes(selection)) {
+        const paid = debit(state, player, 20);
+        state.cardChoice = null;
+        addEvent(state, "card", "Inspection paid", `${player.name} paid F${paid} and kept every landmark open.`, { playerId });
+        return;
+      }
+      const space = chosenSpace(state, choice, selection);
+      const property = propertyFor(state, space.index);
+      if (!property || property.ownerId !== player.id) throw new Error("You no longer own that landmark.");
+      property.closedUntilTurn = state.turnNumber + turnsToNext;
+      state.cardChoice = null;
+      addEvent(state, "card", "Inspection closure", `${player.name} closed ${space.name} instead of paying F20.`, { playerId, spaceIndex: space.index });
+      return;
+    }
+    case "Review Bomb": {
+      const space = chosenSpace(state, choice, selection);
+      const property = propertyFor(state, space.index);
+      if (!property || property.ownerId !== player.id) throw new Error("You no longer own that landmark.");
+      property.rentDiscountUntilTurn = state.turnNumber + turnsToNext;
+      state.cardChoice = null;
+      addEvent(state, "card", "Review target selected", `${space.name}'s entry fee is halved until ${player.name}'s next turn.`, { playerId, spaceIndex: space.index });
+      return;
+    }
+    case "Neighborhood Blackout": {
+      const match = /^district:(\d+)$/.exec(selection);
+      const district = match ? Number(match[1]) : Number.NaN;
+      if (!Number.isInteger(district) || !choice.eligibleDistricts.includes(district)) {
+        throw new Error("Choose one of the six districts.");
+      }
+      state.modifiers.districtBlackout = { district, untilTurn: state.turnNumber + turnsToNext };
+      state.cardChoice = null;
+      addEvent(state, "card", "District blacked out", `${DISTRICTS[district]} collects no entry fees until ${player.name}'s next turn.`, { playerId });
+      return;
+    }
+    case "Celebrity Entourage": {
+      const space = chosenSpace(state, choice, selection);
+      const property = propertyFor(state, space.index);
+      if (!property || property.ownerId !== player.id) throw new Error("You no longer own that landmark.");
+      property.nextVisitorFree = true;
+      player.cash += 50;
+      state.cardChoice = null;
+      addEvent(state, "card", "Guest list chosen", `${space.name}'s next visitor enters free; ${player.name} collected F50.`, { playerId, spaceIndex: space.index });
+      return;
+    }
+    case "Lost Luggage": {
+      if (!choice.options.includes(selection)) throw new Error("Choose the F40 fee or the Midnight Express move.");
+      state.cardChoice = null;
+      if (selection === "pay-40") {
+        const paid = debit(state, player, 40);
+        addEvent(state, "card", "Luggage fee paid", `${player.name} paid F${paid} and stayed put.`, { playerId });
+        return;
+      }
+      const destination = SPACES.find((space) => space.kind === "transport")?.index ?? 6;
+      addCardMovement(state, player, destination, "Luggage recovered", `${player.name} moved to The Midnight Express and ended the turn.`, false);
+      endTurn(state, player);
+      return;
+    }
+    case "Sudden Rebrand": {
+      const space = chosenSpace(state, choice, selection);
+      const property = propertyFor(state, space.index);
+      if (!property || property.ownerId !== player.id) throw new Error("You no longer own that landmark.");
+      property.closedUntilOwnerVisit = true;
+      state.cardChoice = null;
+      addEvent(state, "card", "Rebrand selected", `${space.name} collects no fee until ${player.name} visits it.`, { playerId, spaceIndex: space.index });
+      return;
+    }
+    default:
+      throw new Error("That card choice is not supported.");
+  }
+}
+
 function drawCard(state: FortuneGameState, player: PlayerState, deck: CardDeck, depth: number) {
   const cards = deck === "lucky-break" ? LUCKY_CARDS : PLOT_CARDS;
   const order = deck === "lucky-break" ? state.luckyDeck : state.plotDeck;
@@ -596,13 +865,11 @@ function applyCardEffect(
       player.cash += 80;
       return `${player.name} collected F80.`;
     case "Scenic Shortcut": {
-      const currentDistrict = SPACE_BY_INDEX.get(player.position)?.district;
-      const destination = nearestSpace(
-        player.position,
-        (space) => space.kind === "landmark" && (currentDistrict === null || space.district === currentDistrict),
-      );
-      moveAndResolve(destination.index);
-      return `${player.name} skipped to ${destination.name}.`;
+      const currentDistrict = districtAtPosition(player.position);
+      const eligibleSpaceIndexes = SPACES
+        .filter((space) => space.kind === "landmark" && space.district === currentDistrict)
+        .map((space) => space.index);
+      return beginCardChoice(state, player, card, { kind: "space", eligibleSpaceIndexes });
     }
     case "Tip Jar Overflow": {
       let collected = 0;
@@ -615,17 +882,32 @@ function applyCardEffect(
       resolveSpace(state, player, 7, depth + 1);
       return `${player.name} pocketed F100 and moved ahead.`;
     case "Grand Reopening": {
-      const target = highestOwnedProperty(state, player.id);
-      if (target) target.property.rentMultiplierUntilTurn = state.turnNumber + turnsToNext;
-      return target ? `${target.space.name} is charging double.` : "No deed was available to boost.";
+      const eligibleSpaceIndexes = ownedLandmarkIndexes(state, player.id);
+      return eligibleSpaceIndexes.length > 0
+        ? beginCardChoice(state, player, card, { kind: "space", eligibleSpaceIndexes })
+        : "No owned landmark was available to boost.";
     }
-    case "Friendly Inspector":
-      player.skipTurns = 0;
-      for (const property of owned) property.closedUntilTurn = 0;
-      return `${player.name}'s penalties were cleared.`;
+    case "Friendly Inspector": {
+      const eligibleSpaceIndexes = owned
+        .filter((property) => (
+          property.closedUntilTurn >= state.turnNumber
+          || property.closedUntilOwnerVisit
+          || (property.rentDiscountUntilTurn ?? 0) >= state.turnNumber
+        ))
+        .map((property) => property.spaceIndex);
+      const options = [
+        ...(player.skipTurns > 0 ? ["skip-turn"] : []),
+        ...(player.reverseNext ? ["reverse-next"] : []),
+      ];
+      return eligibleSpaceIndexes.length > 0 || options.length > 0
+        ? beginCardChoice(state, player, card, { kind: "penalty", eligibleSpaceIndexes, options })
+        : `${player.name} had no closure or penalty to remove.`;
+    }
     case "Free Upgrade": {
-      const upgraded = freeUpgrade(state, player);
-      return upgraded ? `${upgraded} received a free crown.` : "Complete a matching-color district before placing a crown.";
+      const eligibleSpaceIndexes = freeUpgradeIndexes(state, player);
+      return eligibleSpaceIndexes.length > 0
+        ? beginCardChoice(state, player, card, { kind: "space", eligibleSpaceIndexes })
+        : "Complete a matching-color district before placing a crown.";
     }
     case "VIP Wristband":
       player.heldCards.push({ id: `vip-${state.turnNumber}-${state.rngSeed}`, title: card.title, effect: card.effect });
@@ -648,25 +930,25 @@ function applyCardEffect(
       player.cash += 50;
       return `${player.name} collected F50.`;
     case "Influencer Visit": {
-      let collected = 0;
-      for (const other of others) collected += transfer(state, other, player, 15);
-      return `${player.name} collected F${collected} in buzz money.`;
+      const eligibleSpaceIndexes = ownedLandmarkIndexes(state, player.id);
+      return eligibleSpaceIndexes.length > 0
+        ? beginCardChoice(state, player, card, { kind: "space", eligibleSpaceIndexes })
+        : "No owned landmark was available for the visit.";
     }
     case "Festival Sponsor":
       moveAndResolve(30, false);
       player.cash += 70;
       return `${player.name} arrived at Street Festival with F70.`;
-    case "Midnight Pass": {
-      const destination = nearestSpace(player.position, (space) => space.kind === "transport");
-      moveAndResolve(destination.index, false);
-      return `${player.name} rode free to ${destination.name}.`;
-    }
+    case "Midnight Pass":
+      return beginCardChoice(state, player, card, {
+        kind: "space",
+        eligibleSpaceIndexes: SPACES.filter((space) => space.kind === "transport").map((space) => space.index),
+      });
     case "Position Upgrade": {
-      const target = others.sort((a, b) => b.cash - a.cash)[0];
-      if (!target) return "No player was available to swap.";
-      [player.position, target.position] = [target.position, player.position];
-      target.cash += 20;
-      return `${player.name} swapped places with ${target.name}.`;
+      const eligiblePlayerIds = others.map((candidate) => candidate.id);
+      return eligiblePlayerIds.length > 0
+        ? beginCardChoice(state, player, card, { kind: "player", eligiblePlayerIds })
+        : "No player was available to swap.";
     }
     case "Lucky Coin":
       player.heldCards.push({ id: `coin-${state.turnNumber}-${state.rngSeed}`, title: card.title, effect: card.effect });
@@ -696,8 +978,7 @@ function applyCardEffect(
       return `The bank matched the crowd; ${player.name} gained F${collected * 2}.`;
     }
     case "Big Break":
-      player.cash += 60;
-      return `${player.name} chose the guaranteed F60.`;
+      return beginCardChoice(state, player, card, { kind: "decision", options: ["cash", "move-six"] });
     case "Fortune Smiles":
       player.position = 0;
       player.cash += state.settings.passBonus;
@@ -705,10 +986,12 @@ function applyCardEffect(
     case "Parade Blockade":
       for (const candidate of activePlayers(state)) moveBy(state, candidate, -3, false);
       return "Everybody shuffled backward three spaces.";
-    case "Surprise Inspection": {
-      const paid = debit(state, player, 20);
-      return `${player.name} paid F${paid}.`;
-    }
+    case "Surprise Inspection":
+      return beginCardChoice(state, player, card, {
+        kind: "decision",
+        eligibleSpaceIndexes: ownedLandmarkIndexes(state, player.id),
+        options: ["pay-20"],
+      });
     case "Free Admission Day":
       state.modifiers.freeAdmissionUntilTurn = state.turnNumber + turnsToNext;
       return "Entry fees are paused until this player returns.";
@@ -717,10 +1000,10 @@ function applyCardEffect(
       player.skipTurns = Math.max(player.skipTurns, 1);
       return `${player.name} is stuck at Wrong Turn for one turn.`;
     case "Review Bomb": {
-      const target = highestOwnedProperty(state, player.id);
-      if (target) target.property.rentMultiplierUntilTurn = 0;
-      if (target) target.property.closedUntilTurn = state.turnNumber + 1;
-      return target ? `${target.space.name} is muted for a turn.` : "The review found no owned landmark.";
+      const eligibleSpaceIndexes = ownedLandmarkIndexes(state, player.id);
+      return eligibleSpaceIndexes.length > 0
+        ? beginCardChoice(state, player, card, { kind: "space", eligibleSpaceIndexes })
+        : "The review found no owned landmark.";
     }
     case "Parking Disaster": {
       const paid = debit(state, player, 30);
@@ -754,25 +1037,16 @@ function applyCardEffect(
     case "Mystery Buyer": {
       const unowned = SPACES.filter((space) => space.kind === "landmark" && !propertyFor(state, space.index));
       const space = unowned[randomInt(state, Math.max(1, unowned.length))];
-      const buyer = [...activePlayers(state)].sort((a, b) => b.cash - a.cash).find((candidate) => space && candidate.cash > Math.round(space.price * 0.75));
-      if (!space || !buyer) return "The mystery buyer vanished before closing.";
-      const price = Math.round(space.price * 0.75);
-      buyer.cash -= price;
-      state.properties[String(space.index)] = {
-        spaceIndex: space.index,
-        ownerId: buyer.id,
-        purchasePrice: price,
-        upgrades: 0,
-        closedUntilTurn: 0,
-        rentMultiplierUntilTurn: 0,
-        nextVisitorFree: false,
-      };
-      return `${buyer.name} won ${space.name} for F${price}.`;
+      if (!space) return "The mystery buyer found no unowned landmark to auction.";
+      state.pendingPurchase = space.index;
+      startAuction(state, player);
+      return `${space.name} is now in a live deed auction.`;
     }
     case "Neighborhood Blackout": {
-      const district = randomInt(state, 6);
-      state.modifiers.districtBlackout = { district, untilTurn: state.turnNumber + turnsToNext };
-      return `District ${district + 1} is dark until ${player.name}'s next turn.`;
+      return beginCardChoice(state, player, card, {
+        kind: "district",
+        eligibleDistricts: DISTRICTS.map((_, district) => district),
+      });
     }
     case "Weather Nonsense":
       for (const candidate of activePlayers(state)) {
@@ -782,10 +1056,12 @@ function applyCardEffect(
       }
       return "Everybody blew to the next corner.";
     case "Celebrity Entourage": {
-      const target = highestOwnedProperty(state, player.id);
-      if (target) target.property.nextVisitorFree = true;
-      player.cash += 50;
-      return target ? `${target.space.name}'s next guest enters free; ${player.name} collected F50.` : `${player.name} collected F50.`;
+      const eligibleSpaceIndexes = ownedLandmarkIndexes(state, player.id);
+      if (eligibleSpaceIndexes.length === 0) {
+        player.cash += 50;
+        return `${player.name} collected F50; no owned landmark needed a guest list.`;
+      }
+      return beginCardChoice(state, player, card, { kind: "space", eligibleSpaceIndexes });
     }
     case "GPS Glitch":
       player.reverseNext = true;
@@ -799,10 +1075,8 @@ function applyCardEffect(
       state.landmarkStealChoice = { playerId: player.id, eligibleSpaceIndexes: eligible.map((entry) => entry.space.index) };
       return `${player.name} may choose the exact rival landmark to buy and take.`;
     }
-    case "Lost Luggage": {
-      const paid = debit(state, player, 40);
-      return `${player.name} paid F${paid}.`;
-    }
+    case "Lost Luggage":
+      return beginCardChoice(state, player, card, { kind: "decision", options: ["pay-40", "midnight-express"] });
     case "Festival Cleanup": {
       const paid = debit(state, player, owned.length * 10);
       return `${player.name} paid F${paid}.`;
@@ -811,9 +1085,10 @@ function applyCardEffect(
       state.modifiers.marketDipUntilTurn = state.turnNumber + turnsToNext;
       return "Every entry fee drops by F10 for one circuit.";
     case "Sudden Rebrand": {
-      const target = highestOwnedProperty(state, player.id);
-      if (target) target.property.closedUntilTurn = state.turnNumber + turnsToNext;
-      return target ? `${target.space.name} is rebranding until ${player.name}'s next turn.` : "No landmark needed a rebrand.";
+      const eligibleSpaceIndexes = ownedLandmarkIndexes(state, player.id);
+      return eligibleSpaceIndexes.length > 0
+        ? beginCardChoice(state, player, card, { kind: "space", eligibleSpaceIndexes })
+        : "No owned landmark needed a rebrand.";
     }
     case "Final Twist": {
       const roll = randomInt(state, 6) + 1;
@@ -1093,6 +1368,7 @@ function declareWinner(state: FortuneGameState, player: PlayerState, reason: str
   state.auction = null;
   state.tradeOffer = null;
   state.landmarkStealChoice = null;
+  state.cardChoice = null;
   addEvent(state, "winner", "Fortune Crowned", `${player.name} wins Fortune Avenue — ${reason}`, {
     playerId: player.id,
   });
@@ -1131,6 +1407,7 @@ function endTurn(state: FortuneGameState, player: PlayerState) {
   if (state.auction) throw new Error("Finish the live auction before ending the turn.");
   if (state.tradeOffer) throw new Error("Finish or withdraw the trade offer before ending the turn.");
   if (state.landmarkStealChoice) throw new Error("Choose the landmark from your Plot Twist before ending the turn.");
+  if (state.cardChoice) throw new Error(`Finish the ${state.cardChoice.cardTitle} choice before ending the turn.`);
   if (checkWinner(state, player)) return;
 
   state.turnNumber += 1;
@@ -1140,6 +1417,7 @@ function endTurn(state: FortuneGameState, player: PlayerState) {
   state.auction = null;
   state.tradeOffer = null;
   state.landmarkStealChoice = null;
+  state.cardChoice = null;
 
   if (player.extraTurns > 0 && !player.bankrupt) {
     player.extraTurns -= 1;
@@ -1293,6 +1571,15 @@ export function applyRoomAction(
     return startGame(state);
   }
 
+  if (state.cardChoice) {
+    if (action.type !== "resolve-card-choice") throw new Error(`Finish the ${state.cardChoice.cardTitle} choice before play continues.`);
+    resolveCardChoice(state, playerId, action.selection);
+    state.updatedAt = now();
+    return state;
+  }
+
+  if (action.type === "resolve-card-choice") throw new Error("There is no card choice waiting on the table.");
+
   if (state.landmarkStealChoice) {
     if (action.type !== "steal-landmark") throw new Error("Choose the landmark from the Plot Twist before play continues.");
     chooseLandmarkSteal(state, playerId, action.spaceIndex);
@@ -1437,11 +1724,107 @@ function botAcceptsTrade(state: FortuneGameState, bot: PlayerState) {
   return incoming >= outgoing * 0.92;
 }
 
+function botCardChoiceSelection(state: FortuneGameState, bot: PlayerState) {
+  const choice = state.cardChoice;
+  if (!choice || choice.playerId !== bot.id) return null;
+  const spaceEntries = choice.eligibleSpaceIndexes.flatMap((spaceIndex) => {
+    const space = SPACE_BY_INDEX.get(spaceIndex);
+    const property = propertyFor(state, spaceIndex);
+    return space ? [{ space, property }] : [];
+  });
+  const highValueSpace = [...spaceEntries].sort((a, b) => b.space.price - a.space.price)[0]?.space;
+  const lowValueSpace = [...spaceEntries].sort((a, b) => a.space.price - b.space.price)[0]?.space;
+
+  switch (choice.cardTitle) {
+    case "Scenic Shortcut": {
+      const best = [...spaceEntries].sort((a, b) => {
+        const score = (entry: (typeof spaceEntries)[number]) => {
+          if (!entry.property) return bot.cash >= entry.space.price ? 2000 + entry.space.price : 250;
+          if (entry.property.ownerId === bot.id) return 1200 + entry.space.price;
+          return -propertyRent(state, entry.property, 7);
+        };
+        return score(b) - score(a);
+      })[0]?.space;
+      return best ? `space:${best.index}` : null;
+    }
+    case "Grand Reopening":
+    case "Free Upgrade":
+    case "Influencer Visit":
+    case "Celebrity Entourage":
+      return highValueSpace ? `space:${highValueSpace.index}` : null;
+    case "Review Bomb":
+    case "Sudden Rebrand":
+      return lowValueSpace ? `space:${lowValueSpace.index}` : null;
+    case "Midnight Pass": {
+      const best = [...spaceEntries].sort((a, b) => {
+        const distanceA = (a.space.index - bot.position + BOARD_SIZE) % BOARD_SIZE;
+        const distanceB = (b.space.index - bot.position + BOARD_SIZE) % BOARD_SIZE;
+        const ownedA = a.property?.ownerId === bot.id ? -20 : 0;
+        const ownedB = b.property?.ownerId === bot.id ? -20 : 0;
+        return distanceA + ownedA - (distanceB + ownedB);
+      })[0]?.space;
+      return best ? `space:${best.index}` : null;
+    }
+    case "Position Upgrade": {
+      const target = state.players
+        .filter((candidate) => choice.eligiblePlayerIds.includes(candidate.id) && !candidate.bankrupt)
+        .sort((a, b) => b.position - a.position || b.cash - a.cash)[0];
+      return target ? `player:${target.id}` : null;
+    }
+    case "Big Break": {
+      const destination = SPACE_BY_INDEX.get((bot.position + 6) % BOARD_SIZE);
+      const destinationProperty = destination ? propertyFor(state, destination.index) : null;
+      const attractiveMove = destination
+        && (destination.kind === "lucky" || destination.kind === "plot" || (!destinationProperty && destination.price > 0 && bot.cash >= destination.price + 180));
+      return attractiveMove ? "move-six" : "cash";
+    }
+    case "Surprise Inspection":
+      return bot.cash < 180 && lowValueSpace ? `space:${lowValueSpace.index}` : "pay-20";
+    case "Neighborhood Blackout": {
+      const bestDistrict = choice.eligibleDistricts
+        .map((district) => ({
+          district,
+          score: Object.values(state.properties).reduce((total, property) => {
+            const space = SPACE_BY_INDEX.get(property.spaceIndex);
+            return space?.district === district && property.ownerId !== bot.id
+              ? total + propertyRent(state, property, 7) + property.upgrades * 25
+              : total;
+          }, 0),
+        }))
+        .sort((a, b) => b.score - a.score || a.district - b.district)[0]?.district;
+      return bestDistrict === undefined ? null : `district:${bestDistrict}`;
+    }
+    case "Friendly Inspector":
+      if (choice.options.includes("skip-turn")) return "skip-turn";
+      if (choice.options.includes("reverse-next")) return "reverse-next";
+      return highValueSpace ? `space:${highValueSpace.index}` : null;
+    case "Lost Luggage":
+      return bot.cash > 180 ? "pay-40" : "midnight-express";
+    default:
+      return choice.options[0]
+        ?? (highValueSpace ? `space:${highValueSpace.index}` : null)
+        ?? (choice.eligibleDistricts[0] === undefined ? null : `district:${choice.eligibleDistricts[0]}`);
+  }
+}
+
 export function runBotTurns(source: FortuneGameState, options: { singleAuctionStep?: boolean } = {}) {
   let state = cloneState(source);
   let safety = 0;
   while (state.phase === "playing" && safety < 160) {
     safety += 1;
+    if (state.cardChoice) {
+      const chooser = state.players.find((player) => player.id === state.cardChoice?.playerId);
+      if (!chooser?.isBot) break;
+      const selection = botCardChoiceSelection(state, chooser);
+      if (!selection) {
+        const title = state.cardChoice.cardTitle;
+        state.cardChoice = null;
+        addEvent(state, "card", "Choice expired", `${chooser.name} had no valid option left for ${title}.`, { playerId: chooser.id });
+        continue;
+      }
+      state = applyRoomAction(state, chooser.id, { type: "resolve-card-choice", selection });
+      continue;
+    }
     if (state.landmarkStealChoice) {
       const chooser = state.players.find((player) => player.id === state.landmarkStealChoice?.playerId);
       if (!chooser?.isBot) break;

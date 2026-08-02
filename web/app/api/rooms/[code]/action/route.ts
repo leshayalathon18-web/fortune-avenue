@@ -17,6 +17,7 @@ const ACTIONS = new Set([
   "trade-accept",
   "trade-decline",
   "steal-landmark",
+  "resolve-card-choice",
   "upgrade",
   "use-card",
   "end-turn",
