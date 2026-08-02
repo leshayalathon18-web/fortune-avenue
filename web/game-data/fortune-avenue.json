@@ -98,7 +98,7 @@
         {"title": "Celebrity Entourage", "effect": "The next visitor pays no fee. Collect 50 from the bank instead."},
         {"title": "GPS Glitch", "effect": "On your next turn, move counterclockwise."},
         {"title": "Construction Season", "effect": "Move forward 2 spaces, then end your turn without resolving the space."},
-        {"title": "Rumor Mill", "effect": "Give one held card to any player. They give you one if possible."},
+        {"title": "Steal a Landmark", "effect": "Choose one rival landmark. Pay its owner what they paid, then take the deed."},
         {"title": "Lost Luggage", "effect": "Pay 40, or move to The Midnight Express and end your turn."},
         {"title": "Festival Cleanup", "effect": "Pay 10 for every landmark you own."},
         {"title": "Market Dip", "effect": "Reduce every entry fee by 10 until your next turn; minimum 0."},

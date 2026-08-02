@@ -106,12 +106,14 @@ export default function FortuneAvenueGame({
   const [muted, setMuted] = useState(false);
   const [selectedSpace, setSelectedSpace] = useState<SpaceDefinition | null>(null);
   const [cardReveal, setCardReveal] = useState<GameEvent | null>(null);
-  const [pendingCard, setPendingCard] = useState<GameEvent | null>(null);
+  const [cardQueue, setCardQueue] = useState<GameEvent[]>([]);
   const [cashQueue, setCashQueue] = useState<GameEvent[]>([]);
   const [pawnMotionBusy, setPawnMotionBusy] = useState(false);
   const seenEvent = useRef<string | null>(null);
   const moneyRoom = useRef<string | null>(null);
   const seenMoneyEvents = useRef(new Set<string>());
+  const cardRoom = useRef<string | null>(null);
+  const seenCardEvents = useRef(new Set<string>());
   const audioContext = useRef<AudioContext | null>(null);
   const initialRoomHandled = useRef(false);
 
@@ -236,11 +238,27 @@ export default function FortuneAvenueGame({
     if (!state?.lastEvent || state.lastEvent.id === seenEvent.current) return;
     seenEvent.current = state.lastEvent.id;
     playSound(state.lastEvent);
-    if (state.lastEvent.card) {
-      const event = state.lastEvent;
-      window.queueMicrotask(() => setPendingCard(event));
-    }
   }, [playSound, state?.lastEvent]);
+
+  useEffect(() => {
+    if (!state) return;
+    if (cardRoom.current !== state.code) {
+      cardRoom.current = state.code;
+      seenCardEvents.current = new Set(state.log.filter((event) => event.card).map((event) => event.id));
+      setCardQueue([]);
+      return;
+    }
+    const freshCards = state.log
+      .filter((event) => event.card && !seenCardEvents.current.has(event.id))
+      .reverse();
+    freshCards.forEach((event) => seenCardEvents.current.add(event.id));
+    if (freshCards.length > 0) {
+      setCardQueue((queue) => {
+        const queuedIds = new Set(queue.map((event) => event.id));
+        return [...queue, ...freshCards.filter((event) => !queuedIds.has(event.id))];
+      });
+    }
+  }, [state]);
 
   useEffect(() => {
     if (!state || !you) return;
@@ -266,13 +284,13 @@ export default function FortuneAvenueGame({
   }, [state, you]);
 
   useEffect(() => {
-    if (!pendingCard || pawnMotionBusy || cashQueue.length > 0 || cardReveal) return;
+    if (!cardQueue[0] || pawnMotionBusy || cashQueue.length > 0 || cardReveal) return;
     const timer = window.setTimeout(() => {
-      setCardReveal(pendingCard);
-      setPendingCard(null);
+      setCardReveal(cardQueue[0]);
+      setCardQueue((queue) => queue.slice(1));
     }, 180);
     return () => window.clearTimeout(timer);
-  }, [cardReveal, cashQueue.length, pawnMotionBusy, pendingCard]);
+  }, [cardQueue, cardReveal, cashQueue.length, pawnMotionBusy]);
 
   useEffect(() => {
     if (!state || !credentials) return;
@@ -388,7 +406,7 @@ export default function FortuneAvenueGame({
     setCredentials(null);
     setYou(null);
     setCardReveal(null);
-    setPendingCard(null);
+    setCardQueue([]);
     setCashQueue([]);
     setPawnMotionBusy(false);
     const url = new URL(window.location.href);
@@ -404,7 +422,7 @@ export default function FortuneAvenueGame({
       {screen === "lobby" && state && you && <LobbyScreen state={state} you={you} onShare={shareRoom} onStart={() => sendAction({ type: "start" })} onRules={() => setShowRules(true)} busy={busy} />}
       {screen === "game" && state && you && <GameScreen state={state} you={you} onAction={sendAction} onShare={shareRoom} onRules={() => setShowRules(true)} onHome={goHome} busy={busy} muted={muted} onToggleMuted={toggleMuted} onMotionChange={setPawnMotionBusy} selectedSpace={selectedSpace} setSelectedSpace={setSelectedSpace} />}
       {showRules && <RulesCard onClose={() => setShowRules(false)} />}
-      {cardReveal && <CardReveal event={cardReveal} onClose={() => setCardReveal(null)} />}
+      {cardReveal && <CardReveal event={cardReveal} drawerName={state?.players.find((player) => player.id === cardReveal.playerId)?.name} onClose={() => setCardReveal(null)} />}
       {state && cashQueue[0] && !pawnMotionBusy && !showRules && !cardReveal && <CashCollection key={cashQueue[0].id} event={cashQueue[0]} state={state} onCollect={() => setCashQueue((queue) => queue.slice(1))} />}
       {toast && <div className="toast" role="status">{toast}</div>}
     </>

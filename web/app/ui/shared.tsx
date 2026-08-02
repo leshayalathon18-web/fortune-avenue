@@ -46,12 +46,12 @@ export function RulesCard({ onClose }: { onClose: () => void }) {
         <h2 id="rules-title">How to rule the Avenue</h2>
         <p className="rules-intro">Build an eight-deed empire worth <strong>F5,000</strong>, or be the last player with cash when everybody else goes broke.</p>
         <div className="rules-grid">
-          <article><span className="rule-number">01</span><h3>Roll & roam</h3><p>Start with F1,400. Roll two dice, move clockwise, and collect F200 whenever you pass Grand Entrance.</p></article>
-          <article><span className="rule-number">02</span><h3>Claim or auction</h3><p>Buy an unowned deed when you land there, or open it to every active bidder. Visitors pay its entry fee. A complete district doubles base fees.</p></article>
+          <article><span className="rule-number">01</span><h3>Shake, roll & roam</h3><p>Start with F1,400. Shake your phone and stop to cast the dice, or tap them on any device. Move clockwise and collect F200 when you pass Grand Entrance.</p></article>
+          <article><span className="rule-number">02</span><h3>Claim, auction, or skip</h3><p>Buy an unowned deed, open it to every active bidder, or skip the auction and leave it unclaimed. Visitors pay its entry fee. A complete district doubles base fees.</p></article>
           <article><span className="rule-number">03</span><h3>Crown your district</h3><p>Own every landmark in one matching-color district to build there. Add two crowns for rising fees; the third build becomes a castle with the highest fee.</p></article>
           <article><span className="rule-number">04</span><h3>Take the twist</h3><p>Lucky Break and Plot Twist cards resolve instantly. Choice-heavy cards make a smart automatic choice so online turns stay quick.</p></article>
           <article><span className="rule-number">05</span><h3>Know the corners</h3><p>City Hall costs F60, Street Festival pays F90, and cards can send you to Wrong Turn for a one-turn timeout.</p></article>
-          <article><span className="rule-number">06</span><h3>Collect your fortune</h3><p>When a visitor pays one of your entry fees, pull the cash down into your vault. Your room still resumes after reloads or sharing the invite.</p></article>
+          <article><span className="rule-number">06</span><h3>Trade & collect</h3><p>Offer landmarks, cash, or both; the other player or bot can accept or decline. Pull entry-fee cash into your vault. Rooms resume after reloads or sharing.</p></article>
         </div>
         <div className="rules-footer">
           <span>Classic night: after 180 turns, highest net worth wins.</span>
@@ -79,11 +79,11 @@ export function HomeScreen({
       <section className="home-cover-card">
         <Image
           src="/og.png"
-          width={1536}
-          height={1024}
+          width={1200}
+          height={630}
           priority
           unoptimized
-          alt="Fortune Avenue board, colorful pawns, and fantasy city"
+          alt="Fortune Avenue fantasy board with gold dice, crowned penguin, crowns, and castle"
         />
         <div className="cover-card-glow" />
         <span className="edition-stamp">Playable web edition</span>

@@ -47,6 +47,9 @@ export interface LobbyOptions {
 function cloneState(state: FortuneGameState): FortuneGameState {
   const cloned = JSON.parse(JSON.stringify(state)) as FortuneGameState;
   cloned.auction ??= null;
+  if (cloned.auction) cloned.auction.participantIds ??= activePlayers(cloned).map((player) => player.id);
+  cloned.tradeOffer ??= null;
+  cloned.landmarkStealChoice ??= null;
   cloned.eventSequence ??= cloned.log.length;
   return cloned;
 }
@@ -147,6 +150,8 @@ export function createLobbyState(options: LobbyOptions): FortuneGameState {
     rolled: false,
     pendingPurchase: null,
     auction: null,
+    tradeOffer: null,
+    landmarkStealChoice: null,
     luckyDeck: [],
     plotDeck: [],
     luckyCursor: 0,
@@ -218,6 +223,8 @@ export function startGame(source: FortuneGameState) {
   state.rolled = false;
   state.pendingPurchase = null;
   state.auction = null;
+  state.tradeOffer = null;
+  state.landmarkStealChoice = null;
   state.updatedAt = now();
   addEvent(
     state,
@@ -492,6 +499,57 @@ function freeUpgrade(state: FortuneGameState, player: PlayerState) {
   return target?.space.name ?? null;
 }
 
+function stealableLandmarks(state: FortuneGameState, player: PlayerState) {
+  return Object.values(state.properties)
+    .flatMap((property) => {
+      const space = SPACE_BY_INDEX.get(property.spaceIndex);
+      const owner = state.players.find((candidate) => candidate.id === property.ownerId);
+      return space && owner ? [{ property, space, owner }] : [];
+    })
+    .filter(({ property, space, owner }) => (
+      space.kind === "landmark"
+      && owner.id !== player.id
+      && !owner.bankrupt
+      && property.upgrades === 0
+      && !districtHasImprovements(state, owner.id, space)
+      && (property.purchasePrice ?? space.price) <= player.cash
+    ));
+}
+
+function bestBotStealTarget(state: FortuneGameState, player: PlayerState) {
+  return stealableLandmarks(state, player)
+    .sort((a, b) => {
+      const ownedA = ownedProperties(state, player.id).filter((property) => SPACE_BY_INDEX.get(property.spaceIndex)?.district === a.space.district).length;
+      const ownedB = ownedProperties(state, player.id).filter((property) => SPACE_BY_INDEX.get(property.spaceIndex)?.district === b.space.district).length;
+      return ownedB - ownedA || b.space.price - a.space.price;
+    })[0] ?? null;
+}
+
+function chooseLandmarkSteal(state: FortuneGameState, playerId: string, spaceIndex: number) {
+  const choice = state.landmarkStealChoice;
+  if (!choice) throw new Error("There is no landmark waiting to be chosen.");
+  if (choice.playerId !== playerId) throw new Error("Only the player who drew the card can choose the landmark.");
+  if (!choice.eligibleSpaceIndexes.includes(spaceIndex)) throw new Error("That landmark is not eligible for this Plot Twist.");
+  const player = state.players.find((candidate) => candidate.id === playerId);
+  const property = propertyFor(state, spaceIndex);
+  const space = SPACE_BY_INDEX.get(spaceIndex);
+  const owner = property ? state.players.find((candidate) => candidate.id === property.ownerId) : null;
+  if (!player || !property || !space || !owner || owner.id === player.id) throw new Error("That landmark is no longer available to take.");
+  const eligibleNow = stealableLandmarks(state, player).some((entry) => entry.space.index === spaceIndex);
+  if (!eligibleNow) throw new Error("That landmark is no longer eligible or affordable.");
+  const price = property.purchasePrice ?? space.price;
+  player.cash -= price;
+  owner.cash += price;
+  property.ownerId = player.id;
+  property.purchasePrice = price;
+  state.landmarkStealChoice = null;
+  addEvent(state, "trade", "Landmark taken!", `${player.name} paid ${owner.name} F${price} and claimed ${space.name}.`, {
+    playerId: player.id,
+    spaceIndex,
+    moneyTransfer: { fromPlayerId: player.id, toPlayerId: owner.id, amount: price },
+  });
+}
+
 function drawCard(state: FortuneGameState, player: PlayerState, deck: CardDeck, depth: number) {
   const cards = deck === "lucky-break" ? LUCKY_CARDS : PLOT_CARDS;
   const order = deck === "lucky-break" ? state.luckyDeck : state.plotDeck;
@@ -703,6 +761,7 @@ function applyCardEffect(
       state.properties[String(space.index)] = {
         spaceIndex: space.index,
         ownerId: buyer.id,
+        purchasePrice: price,
         upgrades: 0,
         closedUntilTurn: 0,
         rentMultiplierUntilTurn: 0,
@@ -734,11 +793,11 @@ function applyCardEffect(
     case "Construction Season":
       moveBy(state, player, 2);
       return `${player.name} moved two spaces without resolving the stop.`;
-    case "Rumor Mill": {
-      const recipient = others[0];
-      const gift = player.heldCards.shift();
-      if (recipient && gift) recipient.heldCards.push(gift);
-      return recipient && gift ? `${player.name} handed ${gift.title} to ${recipient.name}.` : "The rumor had nothing to trade.";
+    case "Steal a Landmark": {
+      const eligible = stealableLandmarks(state, player);
+      if (eligible.length === 0) return "No affordable rival landmark was eligible, so the twist fizzled.";
+      state.landmarkStealChoice = { playerId: player.id, eligibleSpaceIndexes: eligible.map((entry) => entry.space.index) };
+      return `${player.name} may choose the exact rival landmark to buy and take.`;
     }
     case "Lost Luggage": {
       const paid = debit(state, player, 40);
@@ -838,6 +897,7 @@ function buyPending(state: FortuneGameState, player: PlayerState) {
   state.properties[String(space.index)] = {
     spaceIndex: space.index,
     ownerId: player.id,
+    purchasePrice: price,
     upgrades: 0,
     closedUntilTurn: 0,
     rentMultiplierUntilTurn: 0,
@@ -886,6 +946,7 @@ function settleAuction(state: FortuneGameState) {
   state.properties[String(space.index)] = {
     spaceIndex: space.index,
     ownerId: winner.id,
+    purchasePrice: auction.currentBid,
     upgrades: 0,
     closedUntilTurn: 0,
     rentMultiplierUntilTurn: 0,
@@ -917,6 +978,7 @@ function startAuction(state: FortuneGameState, player: PlayerState) {
     spaceIndex: space.index,
     currentBid: 0,
     highBidderId: null,
+    participantIds: [...eligibleBidderIds],
     eligibleBidderIds,
     currentBidderId,
     minimumIncrement: 10,
@@ -1029,6 +1091,8 @@ function declareWinner(state: FortuneGameState, player: PlayerState, reason: str
   state.winnerId = player.id;
   state.pendingPurchase = null;
   state.auction = null;
+  state.tradeOffer = null;
+  state.landmarkStealChoice = null;
   addEvent(state, "winner", "Fortune Crowned", `${player.name} wins Fortune Avenue — ${reason}`, {
     playerId: player.id,
   });
@@ -1063,8 +1127,10 @@ function checkWinner(state: FortuneGameState, candidate?: PlayerState) {
 
 function endTurn(state: FortuneGameState, player: PlayerState) {
   if (!state.rolled) throw new Error("Roll before ending your turn.");
-  if (state.pendingPurchase !== null) throw new Error("Buy the deed or start its auction first.");
+  if (state.pendingPurchase !== null) throw new Error("Buy the deed, auction it, or skip the auction first.");
   if (state.auction) throw new Error("Finish the live auction before ending the turn.");
+  if (state.tradeOffer) throw new Error("Finish or withdraw the trade offer before ending the turn.");
+  if (state.landmarkStealChoice) throw new Error("Choose the landmark from your Plot Twist before ending the turn.");
   if (checkWinner(state, player)) return;
 
   state.turnNumber += 1;
@@ -1072,6 +1138,8 @@ function endTurn(state: FortuneGameState, player: PlayerState) {
   state.rolled = false;
   state.pendingPurchase = null;
   state.auction = null;
+  state.tradeOffer = null;
+  state.landmarkStealChoice = null;
 
   if (player.extraTurns > 0 && !player.bankrupt) {
     player.extraTurns -= 1;
@@ -1094,6 +1162,126 @@ function ensurePlayingTurn(state: FortuneGameState, playerId: string, allowBankr
   return player;
 }
 
+function normalizedTradeCash(value: number) {
+  const cash = Math.round(Number(value));
+  if (!Number.isFinite(cash) || cash < 0) throw new Error("Trade cash must be a non-negative whole amount.");
+  return cash;
+}
+
+function normalizedTradeSpaces(value: number[]) {
+  if (!Array.isArray(value)) throw new Error("The trade deed list is invalid.");
+  const spaces = [...new Set(value.map((index) => Number(index)))];
+  if (spaces.length > 20 || spaces.some((index) => !Number.isInteger(index))) {
+    throw new Error("The trade deed list is invalid.");
+  }
+  return spaces;
+}
+
+function districtHasImprovements(state: FortuneGameState, ownerId: string, space: SpaceDefinition) {
+  if (space.district === null) return false;
+  return ownedProperties(state, ownerId).some((property) => (
+    property.upgrades > 0 && SPACE_BY_INDEX.get(property.spaceIndex)?.district === space.district
+  ));
+}
+
+function validateTradeProperties(
+  state: FortuneGameState,
+  ownerId: string,
+  spaceIndexes: number[],
+) {
+  for (const spaceIndex of spaceIndexes) {
+    const property = propertyFor(state, spaceIndex);
+    const space = SPACE_BY_INDEX.get(spaceIndex);
+    if (!property || property.ownerId !== ownerId || !space) {
+      throw new Error("A deed in that offer is no longer owned by the player giving it.");
+    }
+    if (property.upgrades > 0 || districtHasImprovements(state, ownerId, space)) {
+      throw new Error(`A district with crowns or a castle cannot be traded. ${space.name} must stay put.`);
+    }
+  }
+}
+
+function tradeBundleLabel(state: FortuneGameState, spaceIndexes: number[], cash: number) {
+  const deedNames = spaceIndexes
+    .map((index) => SPACE_BY_INDEX.get(index)?.name)
+    .filter((name): name is string => Boolean(name));
+  const deedLabel = deedNames.length === 0
+    ? "no deeds"
+    : deedNames.length <= 2
+      ? deedNames.join(" and ")
+      : `${deedNames.slice(0, 2).join(", ")} +${deedNames.length - 2} more`;
+  return cash > 0 ? `${deedLabel} plus F${cash}` : deedLabel;
+}
+
+function proposeTrade(
+  state: FortuneGameState,
+  player: PlayerState,
+  action: Extract<RoomAction, { type: "propose-trade" }>,
+) {
+  if (state.pendingPurchase !== null) throw new Error("Resolve the landed deed before opening the trade table.");
+  const recipient = state.players.find((candidate) => candidate.id === action.toPlayerId);
+  if (!recipient || recipient.id === player.id || recipient.bankrupt) throw new Error("Choose another active player for this trade.");
+  const offeredSpaceIndexes = normalizedTradeSpaces(action.offeredSpaceIndexes);
+  const requestedSpaceIndexes = normalizedTradeSpaces(action.requestedSpaceIndexes);
+  const offeredCash = normalizedTradeCash(action.offeredCash);
+  const requestedCash = normalizedTradeCash(action.requestedCash);
+  if (offeredSpaceIndexes.length === 0 && offeredCash === 0) throw new Error("Add a deed or cash to your side of the trade.");
+  if (requestedSpaceIndexes.length === 0 && requestedCash === 0) throw new Error("Ask for a deed or cash in return.");
+  if (player.cash < offeredCash) throw new Error(`You only have F${player.cash} available.`);
+  if (recipient.cash < requestedCash) throw new Error(`${recipient.name} only has F${recipient.cash} available.`);
+  validateTradeProperties(state, player.id, offeredSpaceIndexes);
+  validateTradeProperties(state, recipient.id, requestedSpaceIndexes);
+  state.tradeOffer = {
+    id: `trade-${state.turnNumber}-${state.eventSequence + 1}-${state.rngSeed.toString(36)}`,
+    fromPlayerId: player.id,
+    toPlayerId: recipient.id,
+    offeredSpaceIndexes,
+    requestedSpaceIndexes,
+    offeredCash,
+    requestedCash,
+    createdTurn: state.turnNumber,
+  };
+  addEvent(
+    state,
+    "trade",
+    "Trade proposed",
+    `${player.name} offered ${tradeBundleLabel(state, offeredSpaceIndexes, offeredCash)} to ${recipient.name} for ${tradeBundleLabel(state, requestedSpaceIndexes, requestedCash)}.`,
+    { playerId: player.id },
+  );
+}
+
+function acceptTrade(state: FortuneGameState, playerId: string) {
+  const offer = state.tradeOffer;
+  if (!offer) throw new Error("There is no trade offer to accept.");
+  if (offer.toPlayerId !== playerId) throw new Error("Only the player receiving this offer can accept it.");
+  const proposer = state.players.find((player) => player.id === offer.fromPlayerId);
+  const recipient = state.players.find((player) => player.id === offer.toPlayerId);
+  if (!proposer || !recipient || proposer.bankrupt || recipient.bankrupt) throw new Error("One of the traders is no longer active.");
+  if (proposer.cash < offer.offeredCash || recipient.cash < offer.requestedCash) throw new Error("The cash in that offer is no longer available.");
+  validateTradeProperties(state, proposer.id, offer.offeredSpaceIndexes);
+  validateTradeProperties(state, recipient.id, offer.requestedSpaceIndexes);
+  proposer.cash = proposer.cash - offer.offeredCash + offer.requestedCash;
+  recipient.cash = recipient.cash - offer.requestedCash + offer.offeredCash;
+  offer.offeredSpaceIndexes.forEach((spaceIndex) => { state.properties[String(spaceIndex)].ownerId = recipient.id; });
+  offer.requestedSpaceIndexes.forEach((spaceIndex) => { state.properties[String(spaceIndex)].ownerId = proposer.id; });
+  state.tradeOffer = null;
+  addEvent(state, "trade", "Deal accepted", `${recipient.name} shook on the deal with ${proposer.name}. Deeds and cash have changed hands.`, {
+    playerId: recipient.id,
+  });
+}
+
+function declineTrade(state: FortuneGameState, playerId: string) {
+  const offer = state.tradeOffer;
+  if (!offer) throw new Error("There is no trade offer to decline.");
+  if (playerId !== offer.toPlayerId && playerId !== offer.fromPlayerId) throw new Error("Only the two traders can close this offer.");
+  const actor = state.players.find((player) => player.id === playerId);
+  const withdrawn = playerId === offer.fromPlayerId;
+  state.tradeOffer = null;
+  addEvent(state, "trade", withdrawn ? "Offer withdrawn" : "Trade declined", `${actor?.name ?? "A player"} ${withdrawn ? "withdrew" : "declined"} the deal.`, {
+    playerId,
+  });
+}
+
 export function applyRoomAction(
   source: FortuneGameState,
   playerId: string,
@@ -1105,15 +1293,43 @@ export function applyRoomAction(
     return startGame(state);
   }
 
+  if (state.landmarkStealChoice) {
+    if (action.type !== "steal-landmark") throw new Error("Choose the landmark from the Plot Twist before play continues.");
+    chooseLandmarkSteal(state, playerId, action.spaceIndex);
+    state.updatedAt = now();
+    return state;
+  }
+
+  if (action.type === "steal-landmark") throw new Error("There is no landmark waiting to be chosen.");
+
+  if (state.tradeOffer) {
+    if (action.type === "trade-accept") acceptTrade(state, playerId);
+    else if (action.type === "trade-decline") declineTrade(state, playerId);
+    else throw new Error("The trade offer must be accepted, declined, or withdrawn first.");
+    state.updatedAt = now();
+    return state;
+  }
+
+  if (action.type === "trade-accept" || action.type === "trade-decline") {
+    throw new Error("There is no open trade offer.");
+  }
+
   if (state.auction) {
     if (action.type === "auction-bid") auctionBid(state, playerId, action.amount);
     else if (action.type === "auction-pass") auctionPass(state, playerId);
+    else if (action.type === "auction-tick") {
+      const bidder = state.players.find((candidate) => candidate.id === state.auction?.currentBidderId);
+      if (!bidder?.isBot) throw new Error("The auction is waiting for a player, not a bot.");
+      const botAction = botAuctionAction(state, bidder);
+      if (botAction.type === "auction-bid") auctionBid(state, bidder.id, botAction.amount);
+      else auctionPass(state, bidder.id);
+    }
     else throw new Error("The live auction must finish before the Avenue continues.");
     state.updatedAt = now();
     return state;
   }
 
-  if (action.type === "auction-bid" || action.type === "auction-pass") {
+  if (action.type === "auction-bid" || action.type === "auction-pass" || action.type === "auction-tick") {
     throw new Error("There is no live auction.");
   }
 
@@ -1135,6 +1351,9 @@ export function applyRoomAction(
       break;
     case "start-auction":
       startAuction(state, player);
+      break;
+    case "propose-trade":
+      proposeTrade(state, player, action);
       break;
     case "upgrade":
       upgradeProperty(state, player, action.spaceIndex);
@@ -1190,15 +1409,62 @@ function botAuctionAction(state: FortuneGameState, bot: PlayerState): RoomAction
   return { type: "auction-bid", amount: Math.max(minimumBid, affordableBid) };
 }
 
-export function runBotTurns(source: FortuneGameState) {
+function botTradePropertyValue(state: FortuneGameState, bot: PlayerState, spaceIndexes: number[], receiving: boolean) {
+  let value = 0;
+  for (const spaceIndex of spaceIndexes) {
+    const space = SPACE_BY_INDEX.get(spaceIndex);
+    if (!space) continue;
+    let deedValue = space.price + space.baseRent * 4;
+    if (space.district !== null) {
+      const districtSpaces = SPACES.filter((candidate) => candidate.district === space.district);
+      const currentlyOwned = new Set(ownedProperties(state, bot.id).map((property) => property.spaceIndex));
+      if (receiving) spaceIndexes.forEach((index) => currentlyOwned.add(index));
+      const completesDistrict = districtSpaces.every((candidate) => currentlyOwned.has(candidate.index));
+      const ownsDistrictNow = districtSpaces.every((candidate) => state.properties[String(candidate.index)]?.ownerId === bot.id);
+      if (completesDistrict || (!receiving && ownsDistrictNow)) deedValue *= 1.4;
+    }
+    value += deedValue;
+  }
+  return value;
+}
+
+function botAcceptsTrade(state: FortuneGameState, bot: PlayerState) {
+  const offer = state.tradeOffer;
+  if (!offer || offer.toPlayerId !== bot.id) return false;
+  if (bot.cash - offer.requestedCash + offer.offeredCash < 150) return false;
+  const incoming = offer.offeredCash + botTradePropertyValue(state, bot, offer.offeredSpaceIndexes, true);
+  const outgoing = offer.requestedCash + botTradePropertyValue(state, bot, offer.requestedSpaceIndexes, false);
+  return incoming >= outgoing * 0.92;
+}
+
+export function runBotTurns(source: FortuneGameState, options: { singleAuctionStep?: boolean } = {}) {
   let state = cloneState(source);
   let safety = 0;
   while (state.phase === "playing" && safety < 160) {
     safety += 1;
+    if (state.landmarkStealChoice) {
+      const chooser = state.players.find((player) => player.id === state.landmarkStealChoice?.playerId);
+      if (!chooser?.isBot) break;
+      const target = bestBotStealTarget(state, chooser);
+      if (!target) {
+        state.landmarkStealChoice = null;
+        addEvent(state, "card", "Twist fizzled", `${chooser.name} had no eligible rival landmark left to choose.`, { playerId: chooser.id });
+        continue;
+      }
+      state = applyRoomAction(state, chooser.id, { type: "steal-landmark", spaceIndex: target.space.index });
+      continue;
+    }
+    if (state.tradeOffer) {
+      const recipient = state.players.find((player) => player.id === state.tradeOffer?.toPlayerId);
+      if (!recipient?.isBot) break;
+      state = applyRoomAction(state, recipient.id, { type: botAcceptsTrade(state, recipient) ? "trade-accept" : "trade-decline" });
+      continue;
+    }
     if (state.auction) {
       const bidder = state.players.find((player) => player.id === state.auction?.currentBidderId);
       if (!bidder?.isBot) break;
       state = applyRoomAction(state, bidder.id, botAuctionAction(state, bidder));
+      if (options.singleAuctionStep) break;
       continue;
     }
     if (!currentPlayer(state)?.isBot) break;
@@ -1211,10 +1477,15 @@ export function runBotTurns(source: FortuneGameState) {
     }
     if (state.pendingPurchase !== null) {
       const space = SPACE_BY_INDEX.get(state.pendingPurchase);
+      const action: RoomAction = space && botWantsPurchase(state, bot, space)
+        ? { type: "buy" }
+        : nextRandom(state) < 0.3
+          ? { type: "start-auction" }
+          : { type: "skip-purchase" };
       state = applyRoomAction(
         state,
         bot.id,
-        space && botWantsPurchase(state, bot, space) ? { type: "buy" } : { type: "start-auction" },
+        action,
       );
       continue;
     }

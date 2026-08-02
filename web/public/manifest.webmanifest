@@ -1,0 +1,25 @@
+{
+  "name": "Fortune Avenue",
+  "short_name": "Fortune Ave",
+  "description": "Roll in, buy big, and cause chaos with bots or friends.",
+  "start_url": "/opening.html?release=9",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#020706",
+  "theme_color": "#07100d",
+  "icons": [
+    {
+      "src": "/app-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/app-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

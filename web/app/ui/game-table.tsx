@@ -9,9 +9,16 @@ import {
   useState,
 } from "react";
 import Image from "next/image";
-import { Castle, Crown } from "lucide-react";
-import { DISTRICTS, GAME_TAGLINE, PAWNS, SPACE_BY_INDEX, SPACES } from "@/lib/game-data";
+import { ArrowLeftRight, Castle, Check, Coins, Crown, Handshake, X } from "lucide-react";
+import { DISTRICTS, GAME_TAGLINE, PAWNS, PLOT_CARDS, SPACE_BY_INDEX, SPACES } from "@/lib/game-data";
 import { currentPlayer, netWorth, ownedProperties, propertyRent } from "@/lib/game-engine";
+import {
+  isShakeImpulse,
+  SHAKE_HITS_REQUIRED,
+  SHAKE_HIT_WINDOW_MS,
+  SHAKE_SETTLE_MS,
+  type MotionVector,
+} from "@/lib/shake-roll";
 import type { FortuneGameState, GameEvent, RoomAction, SpaceDefinition } from "@/lib/game-types";
 import { GoldParticles, PawnPortrait } from "./shared";
 
@@ -87,6 +94,223 @@ function DiceFace({ value, rolling }: { value: number; rolling: boolean }) {
   return <span className={`dice-face ${rolling ? "is-rolling" : ""}`} aria-label={`Die showing ${value}`}>{Array.from({ length: 9 }, (_, index) => <span key={index} className={pipMap[value]?.includes(index) ? "pip is-visible" : "pip"} />)}</span>;
 }
 
+type MotionPermissionConstructor = typeof DeviceMotionEvent & {
+  requestPermission?: () => Promise<"granted" | "denied">;
+};
+
+type MotionMode = "checking" | "permission" | "ready" | "fallback";
+
+function randomDie() {
+  return Math.floor(Math.random() * 6) + 1;
+}
+
+function ShakeDiceControl({
+  firstValue,
+  secondValue,
+  canRoll,
+  busy,
+  rollKey,
+  onRoll,
+}: {
+  firstValue: number;
+  secondValue: number;
+  canRoll: boolean;
+  busy: boolean;
+  rollKey: string;
+  onRoll: () => void;
+}) {
+  const [motionMode, setMotionMode] = useState<MotionMode>("checking");
+  const [coarsePointer, setCoarsePointer] = useState(false);
+  const [shakeActive, setShakeActive] = useState(false);
+  const [rollCommitted, setRollCommitted] = useState(false);
+  const [landed, setLanded] = useState(false);
+  const [previewDice, setPreviewDice] = useState<[number, number]>([firstValue, secondValue]);
+  const onRollRef = useRef(onRoll);
+  const canRollRef = useRef(canRoll);
+  const busyRef = useRef(busy);
+  const rollLocked = useRef(false);
+  const dispatchTimer = useRef<number | null>(null);
+  const safetyTimer = useRef<number | null>(null);
+  const settleTimer = useRef<number | null>(null);
+  const landedTimer = useRef<number | null>(null);
+  const sawBusy = useRef(false);
+  const lastResult = useRef(`${firstValue}-${secondValue}`);
+
+  useEffect(() => {
+    onRollRef.current = onRoll;
+    canRollRef.current = canRoll;
+    busyRef.current = busy;
+  }, [busy, canRoll, onRoll]);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      const coarse = window.matchMedia("(pointer: coarse)").matches || navigator.maxTouchPoints > 0;
+      setCoarsePointer(coarse);
+      if (!coarse || !("DeviceMotionEvent" in window)) {
+        setMotionMode("fallback");
+        return;
+      }
+      const motionConstructor = window.DeviceMotionEvent as MotionPermissionConstructor;
+      setMotionMode(typeof motionConstructor.requestPermission === "function" ? "permission" : "ready");
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
+
+  useEffect(() => {
+    rollLocked.current = false;
+    sawBusy.current = false;
+    if (dispatchTimer.current !== null) window.clearTimeout(dispatchTimer.current);
+    if (safetyTimer.current !== null) window.clearTimeout(safetyTimer.current);
+    if (settleTimer.current !== null) window.clearTimeout(settleTimer.current);
+    const frame = window.requestAnimationFrame(() => {
+      setShakeActive(false);
+      setRollCommitted(false);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [rollKey]);
+
+  useEffect(() => {
+    if (busy) sawBusy.current = true;
+    if (!busy && sawBusy.current) {
+      sawBusy.current = false;
+      setRollCommitted(false);
+      if (canRoll) rollLocked.current = false;
+    }
+  }, [busy, canRoll]);
+
+  useEffect(() => {
+    const result = `${firstValue}-${secondValue}`;
+    if (lastResult.current !== result) {
+      lastResult.current = result;
+      setLanded(true);
+      if (landedTimer.current !== null) window.clearTimeout(landedTimer.current);
+      landedTimer.current = window.setTimeout(() => setLanded(false), 720);
+    }
+  }, [firstValue, secondValue]);
+
+  const triggerRoll = useCallback(() => {
+    if (!canRollRef.current || busyRef.current || rollLocked.current) return;
+    rollLocked.current = true;
+    setShakeActive(false);
+    setRollCommitted(true);
+    if (settleTimer.current !== null) window.clearTimeout(settleTimer.current);
+    if (dispatchTimer.current !== null) window.clearTimeout(dispatchTimer.current);
+    if (safetyTimer.current !== null) window.clearTimeout(safetyTimer.current);
+    if (navigator.vibrate) navigator.vibrate([18, 24, 18]);
+    dispatchTimer.current = window.setTimeout(() => onRollRef.current(), 520);
+    safetyTimer.current = window.setTimeout(() => {
+      if (canRollRef.current && !busyRef.current) {
+        rollLocked.current = false;
+        setRollCommitted(false);
+      }
+    }, 6000);
+  }, []);
+
+  useEffect(() => {
+    if (motionMode !== "ready" || !canRoll || busy || rollCommitted) return;
+    let previous: MotionVector | null = null;
+    let hitCount = 0;
+    let hitWindowStarted = 0;
+
+    const handleMotion = (event: DeviceMotionEvent) => {
+      const acceleration = event.accelerationIncludingGravity ?? event.acceleration;
+      if (acceleration?.x === null || acceleration?.x === undefined
+        || acceleration.y === null || acceleration.y === undefined
+        || acceleration.z === null || acceleration.z === undefined) return;
+      const current = { x: acceleration.x, y: acceleration.y, z: acceleration.z };
+      const rotation = {
+        alpha: event.rotationRate?.alpha ?? 0,
+        beta: event.rotationRate?.beta ?? 0,
+        gamma: event.rotationRate?.gamma ?? 0,
+      };
+      const now = Date.now();
+      const impulse = previous ? isShakeImpulse(previous, current, rotation) : false;
+      previous = current;
+      if (!impulse) return;
+      if (now - hitWindowStarted > SHAKE_HIT_WINDOW_MS) {
+        hitWindowStarted = now;
+        hitCount = 0;
+      }
+      hitCount += 1;
+      if (hitCount < SHAKE_HITS_REQUIRED) return;
+      setShakeActive(true);
+      if (settleTimer.current !== null) window.clearTimeout(settleTimer.current);
+      settleTimer.current = window.setTimeout(triggerRoll, SHAKE_SETTLE_MS);
+    };
+
+    window.addEventListener("devicemotion", handleMotion, { passive: true });
+    return () => {
+      window.removeEventListener("devicemotion", handleMotion);
+      if (settleTimer.current !== null) window.clearTimeout(settleTimer.current);
+    };
+  }, [busy, canRoll, motionMode, rollCommitted, triggerRoll]);
+
+  const visualRolling = shakeActive || rollCommitted;
+  useEffect(() => {
+    if (!visualRolling) return;
+    const previewTimer = window.setInterval(() => setPreviewDice([randomDie(), randomDie()]), 90);
+    return () => window.clearInterval(previewTimer);
+  }, [visualRolling]);
+
+  useEffect(() => () => {
+    if (dispatchTimer.current !== null) window.clearTimeout(dispatchTimer.current);
+    if (safetyTimer.current !== null) window.clearTimeout(safetyTimer.current);
+    if (settleTimer.current !== null) window.clearTimeout(settleTimer.current);
+    if (landedTimer.current !== null) window.clearTimeout(landedTimer.current);
+  }, []);
+
+  const enableMotionOrRoll = async () => {
+    if (!canRoll || busy || rollCommitted) return;
+    if (motionMode === "permission") {
+      const motionConstructor = window.DeviceMotionEvent as MotionPermissionConstructor;
+      try {
+        const permission = await motionConstructor.requestPermission?.();
+        setMotionMode(permission === "granted" ? "ready" : "fallback");
+      } catch {
+        setMotionMode("fallback");
+      }
+      return;
+    }
+    triggerRoll();
+  };
+
+  const prompt = visualRolling
+    ? shakeActive ? "Keep shaking - release to roll" : "Dice tumbling on the Avenue"
+    : motionMode === "permission"
+      ? "Tap dice once to enable shake"
+      : motionMode === "ready" && coarsePointer
+        ? "Shake phone - stop to roll"
+        : coarsePointer
+          ? "Tap dice to roll"
+          : "Click dice to roll";
+  const displayedDice: [number, number] = visualRolling ? previewDice : [firstValue, secondValue];
+  const dice = (
+    <>
+      <span className="dice-surface">
+        <DiceFace value={displayedDice[0]} rolling={visualRolling} />
+        <DiceFace value={displayedDice[1]} rolling={visualRolling} />
+      </span>
+      {canRoll && <span className="dice-instruction" role="status" aria-live="polite">{prompt}</span>}
+      <span className="dice-motion-streaks" aria-hidden="true"><i /><i /><i /></span>
+    </>
+  );
+
+  if (!canRoll) {
+    return <div className={`board-dice-control is-passive ${landed ? "is-landed" : ""}`} aria-label={`Dice show ${firstValue} and ${secondValue}`}>{dice}</div>;
+  }
+  return (
+    <button
+      className={`board-dice-control can-roll ${visualRolling ? "is-tumbling" : ""} ${shakeActive ? "is-shaking" : ""} ${landed ? "is-landed" : ""}`}
+      type="button"
+      disabled={busy || rollCommitted}
+      aria-label={motionMode === "permission" ? "Enable phone shake for the dice" : coarsePointer ? "Shake phone or tap dice to roll" : "Click dice to roll"}
+      onClick={() => void enableMotionOrRoll()}
+    >
+      {dice}
+    </button>
+  );
+}
+
 function SpaceTile({
   space,
   state,
@@ -149,12 +373,18 @@ function BoardCenter({ state, you, onAction, busy }: { state: FortuneGameState; 
       <div className={`turn-console ${isYourTurn ? "is-yours" : ""}`}>
         <span className="turn-label">{state.phase === "finished" ? "Final fortune" : isYourTurn ? "Your turn" : `${active?.name ?? "Avenue"}'s turn`}</span>
         {active && <div className="turn-player"><PawnPortrait pawn={pawnBySlug(active.pawnSlug)} /><div><strong>{active.name}</strong><small>Round {state.roundNumber} • Turn {state.turnNumber}</small></div></div>}
-        <div className="dice-tray"><DiceFace value={state.dice?.[0] ?? 1} rolling={busy} /><DiceFace value={state.dice?.[1] ?? 6} rolling={busy} /></div>
+        <ShakeDiceControl
+          firstValue={state.dice?.[0] ?? 1}
+          secondValue={state.dice?.[1] ?? 6}
+          canRoll={Boolean(isYourTurn && !state.rolled && state.phase === "playing")}
+          busy={busy}
+          rollKey={`${state.code}-${state.turnNumber}-${active?.id ?? "none"}`}
+          onRoll={() => onAction({ type: "roll" })}
+        />
         {state.phase === "finished" ? <div className="winner-mini">The Avenue has chosen.</div> : isYourTurn ? (
           <div className="turn-actions">
             {!state.rolled && luckyCoin && <button className="mini-action lucky-action" type="button" disabled={busy} onClick={() => onAction({ type: "use-card", cardId: luckyCoin.id })}>Use Lucky Coin</button>}
-            {!state.rolled && <button className="roll-button" type="button" disabled={busy} onClick={() => onAction({ type: "roll" })}><span className="roll-dice-icon"><i /><i /><i /></span>{busy ? "Rolling…" : "Roll dice"}</button>}
-            {pendingSpace && <div className="purchase-prompt"><strong>{pendingSpace.name}</strong><span>Claim for {money(Math.max(0, pendingSpace.price - (youPlayer?.purchaseDiscount ?? 0)))}</span><div><button type="button" className="mini-action buy-action" disabled={busy} onClick={() => onAction({ type: "buy" })}>Buy deed</button><button type="button" className="mini-action auction-action" disabled={busy} onClick={() => onAction({ type: "start-auction" })}>Auction</button></div></div>}
+            {pendingSpace && <div className="purchase-prompt"><strong>{pendingSpace.name}</strong><span>Claim for {money(Math.max(0, pendingSpace.price - (youPlayer?.purchaseDiscount ?? 0)))}</span><div><button type="button" className="mini-action buy-action" disabled={busy} onClick={() => onAction({ type: "buy" })}>Buy deed</button><button type="button" className="mini-action auction-action" disabled={busy} onClick={() => onAction({ type: "start-auction" })}>Auction</button><button type="button" className="mini-action skip-auction-action" disabled={busy} onClick={() => onAction({ type: "skip-purchase" })}>Skip auction</button></div></div>}
             {state.rolled && !pendingSpace && !state.auction && <button className="end-turn-button" type="button" disabled={busy} onClick={() => onAction({ type: "end-turn" })}>End turn</button>}
           </div>
         ) : <div className="waiting-turn"><i /> The table will update automatically</div>}
@@ -175,12 +405,18 @@ function AuctionHouse({
   busy: boolean;
 }) {
   const auction = state.auction;
+  const bidder = state.players.find((player) => player.id === auction?.currentBidderId);
+  useEffect(() => {
+    if (!auction || !bidder?.isBot || busy) return;
+    const timer = window.setTimeout(() => onAction({ type: "auction-tick" }), 1150);
+    return () => window.clearTimeout(timer);
+  }, [auction, bidder?.isBot, busy, onAction]);
   if (!auction) return null;
   const space = SPACE_BY_INDEX.get(auction.spaceIndex);
-  const bidder = state.players.find((player) => player.id === auction.currentBidderId);
   const leader = state.players.find((player) => player.id === auction.highBidderId);
   const youPlayer = state.players.find((player) => player.id === you.playerId);
   const isYourBid = bidder?.id === you.playerId;
+  const auctionEvents = state.log.filter((event) => event.type === "auction" && event.spaceIndex === auction.spaceIndex).slice(0, 4);
   const minimum = auction.currentBid + auction.minimumIncrement;
   const bids = [...new Set([minimum, minimum + 40, minimum + 90])]
     .filter((amount) => amount <= (youPlayer?.cash ?? 0));
@@ -196,13 +432,14 @@ function AuctionHouse({
           <h2 id="auction-title">{space?.name ?? "Mystery deed"}</h2>
           <div className="auction-price"><small>Current bid</small><strong>{auction.currentBid > 0 ? money(auction.currentBid) : "Opening at F10"}</strong><span>{leader ? `${leader.name} is leading` : "No bids yet"}</span></div>
           <div className="auction-bidders" aria-label="Active bidders">
-            {state.players.filter((player) => auction.eligibleBidderIds.includes(player.id)).map((player) => (
-              <span key={player.id} className={`${player.id === auction.currentBidderId ? "is-up" : ""} ${player.id === auction.highBidderId ? "is-leading" : ""}`}>
+            {state.players.filter((player) => auction.participantIds.includes(player.id)).map((player) => (
+              <span key={player.id} className={`${player.id === auction.currentBidderId ? "is-up" : ""} ${player.id === auction.highBidderId ? "is-leading" : ""} ${!auction.eligibleBidderIds.includes(player.id) ? "is-out" : ""}`}>
                 <PawnPortrait pawn={pawnBySlug(player.pawnSlug)} />
                 <b>{player.name}</b>
               </span>
             ))}
           </div>
+          <div className="auction-activity" aria-live="polite">{auctionEvents.map((event) => <span key={event.id}><i />{event.message}</span>)}</div>
           {isYourBid ? (
             <div className="auction-controls">
               <p>Your call. Raise the paddle or fold for good.</p>
@@ -210,8 +447,208 @@ function AuctionHouse({
               <button className="auction-fold-button" type="button" disabled={busy} onClick={() => onAction({ type: "auction-pass" })}>Fold</button>
             </div>
           ) : (
-            <div className="auction-waiting"><i /> {bidder?.name ?? "The auctioneer"} is choosing a bid...</div>
+            <div className={`auction-waiting ${bidder?.isBot ? "bot-is-bidding" : ""}`}><i /> {bidder?.isBot ? `${bidder.name} is raising the paddle...` : `${bidder?.name ?? "The auctioneer"} is choosing a bid...`}</div>
           )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function tradeLocked(state: FortuneGameState, playerId: string, space: SpaceDefinition) {
+  const property = state.properties[String(space.index)];
+  if (!property || property.upgrades > 0) return Boolean(property?.upgrades);
+  if (space.district === null) return false;
+  return ownedProperties(state, playerId).some((owned) => (
+    owned.upgrades > 0 && SPACE_BY_INDEX.get(owned.spaceIndex)?.district === space.district
+  ));
+}
+
+function TradeDeedPicker({
+  state,
+  playerId,
+  selected,
+  onToggle,
+}: {
+  state: FortuneGameState;
+  playerId: string;
+  selected: number[];
+  onToggle: (spaceIndex: number) => void;
+}) {
+  const deeds = ownedProperties(state, playerId).flatMap((property) => {
+    const space = SPACE_BY_INDEX.get(property.spaceIndex);
+    return space ? [space] : [];
+  });
+  if (deeds.length === 0) return <div className="trade-empty">No deeds in this portfolio yet.</div>;
+  return (
+    <div className="trade-deed-picker">
+      {deeds.map((space) => {
+        const locked = tradeLocked(state, playerId, space);
+        const checked = selected.includes(space.index);
+        return (
+          <button
+            key={space.index}
+            className={`${checked ? "is-selected" : ""} ${locked ? "is-locked" : ""}`}
+            style={{ "--district-color": space.districtColor } as CSSProperties}
+            type="button"
+            disabled={locked}
+            aria-pressed={checked}
+            title={locked ? "Crowns and castles lock this color set until the improvements are removed." : `Add ${space.name} to the offer`}
+            onClick={() => onToggle(space.index)}
+          >
+            <span className="trade-deed-art" style={{ backgroundImage: `url(${space.asset})` }} />
+            <span><strong>{space.name}</strong><small>{locked ? "Crowned district - locked" : `${money(space.price)} deed`}</small></span>
+            <i aria-hidden="true">{checked ? <Check /> : null}</i>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function TradeBuilder({
+  state,
+  youId,
+  onAction,
+  onClose,
+  busy,
+}: {
+  state: FortuneGameState;
+  youId: string;
+  onAction: (action: RoomAction) => void;
+  onClose: () => void;
+  busy: boolean;
+}) {
+  const youPlayer = state.players.find((player) => player.id === youId);
+  const recipients = state.players.filter((player) => player.id !== youId && !player.bankrupt);
+  const [targetId, setTargetId] = useState(recipients[0]?.id ?? "");
+  const [offeredSpaces, setOfferedSpaces] = useState<number[]>([]);
+  const [requestedSpaces, setRequestedSpaces] = useState<number[]>([]);
+  const [offeredCash, setOfferedCash] = useState(0);
+  const [requestedCash, setRequestedCash] = useState(0);
+  const target = recipients.find((player) => player.id === targetId) ?? recipients[0];
+  const givesSomething = offeredSpaces.length > 0 || offeredCash > 0;
+  const getsSomething = requestedSpaces.length > 0 || requestedCash > 0;
+  const canSend = Boolean(target && givesSomething && getsSomething && offeredCash <= (youPlayer?.cash ?? 0) && requestedCash <= target.cash);
+  const chooseTarget = (playerId: string) => {
+    setTargetId(playerId);
+    setRequestedSpaces([]);
+    setRequestedCash(0);
+  };
+  const toggleOffered = (spaceIndex: number) => setOfferedSpaces((current) => current.includes(spaceIndex) ? current.filter((index) => index !== spaceIndex) : [...current, spaceIndex]);
+  const toggleRequested = (spaceIndex: number) => setRequestedSpaces((current) => current.includes(spaceIndex) ? current.filter((index) => index !== spaceIndex) : [...current, spaceIndex]);
+  const send = () => {
+    if (!target || !canSend) return;
+    onAction({
+      type: "propose-trade",
+      toPlayerId: target.id,
+      offeredSpaceIndexes: offeredSpaces,
+      requestedSpaceIndexes: requestedSpaces,
+      offeredCash,
+      requestedCash,
+    });
+    onClose();
+  };
+  return (
+    <div className="trade-backdrop" role="presentation">
+      <section className="trade-table" role="dialog" aria-modal="true" aria-labelledby="trade-builder-title">
+        <header className="trade-header">
+          <div><span>Avenue deal room</span><h2 id="trade-builder-title">Build a trade</h2><p>Swap landmarks, add cash, and send the offer across the table.</p></div>
+          <button type="button" onClick={onClose} aria-label="Close trade table"><X /></button>
+        </header>
+        <div className="trade-recipient-row" aria-label="Choose a player to trade with">
+          {recipients.map((player) => <button key={player.id} type="button" className={target?.id === player.id ? "is-selected" : ""} onClick={() => chooseTarget(player.id)}><PawnPortrait pawn={pawnBySlug(player.pawnSlug)} /><span>{player.name}<small>{player.isBot ? "Bot negotiator" : "Player"}</small></span></button>)}
+        </div>
+        {target ? (
+          <div className="trade-columns">
+            <section className="trade-side you-give">
+              <div className="trade-side-title"><PawnPortrait pawn={pawnBySlug(youPlayer?.pawnSlug ?? PAWNS[0].slug)} /><span><small>You give</small><strong>{youPlayer?.name ?? "You"}</strong></span></div>
+              <TradeDeedPicker state={state} playerId={youId} selected={offeredSpaces} onToggle={toggleOffered} />
+              <label className="trade-cash"><Coins /><span><strong>Add cash</strong><small>Available {money(youPlayer?.cash ?? 0)}</small></span><b>F</b><input type="number" inputMode="numeric" min={0} max={youPlayer?.cash ?? 0} step={10} value={offeredCash} onChange={(event) => setOfferedCash(Math.max(0, Math.min(youPlayer?.cash ?? 0, Math.round(Number(event.target.value) || 0))))} /></label>
+            </section>
+            <ArrowLeftRight className="trade-swap-mark" aria-hidden="true" />
+            <section className="trade-side you-get">
+              <div className="trade-side-title"><PawnPortrait pawn={pawnBySlug(target.pawnSlug)} /><span><small>You request</small><strong>{target.name}</strong></span></div>
+              <TradeDeedPicker state={state} playerId={target.id} selected={requestedSpaces} onToggle={toggleRequested} />
+              <label className="trade-cash"><Coins /><span><strong>Request cash</strong><small>Available {money(target.cash)}</small></span><b>F</b><input type="number" inputMode="numeric" min={0} max={target.cash} step={10} value={requestedCash} onChange={(event) => setRequestedCash(Math.max(0, Math.min(target.cash, Math.round(Number(event.target.value) || 0))))} /></label>
+            </section>
+          </div>
+        ) : <div className="trade-empty">No other active player is available to trade.</div>}
+        <footer className="trade-footer"><span>{!givesSomething ? "Choose what you will give." : !getsSomething ? "Choose what you want back." : `${offeredSpaces.length} deed${offeredSpaces.length === 1 ? "" : "s"} + ${money(offeredCash)} for ${requestedSpaces.length} deed${requestedSpaces.length === 1 ? "" : "s"} + ${money(requestedCash)}`}</span><button type="button" disabled={busy || !canSend} onClick={send}><Handshake /> Send offer</button></footer>
+      </section>
+    </div>
+  );
+}
+
+function TradeBundle({ state, playerId, spaceIndexes, cash }: { state: FortuneGameState; playerId: string; spaceIndexes: number[]; cash: number }) {
+  const player = state.players.find((candidate) => candidate.id === playerId);
+  return (
+    <section className="trade-offer-bundle">
+      <div><PawnPortrait pawn={pawnBySlug(player?.pawnSlug ?? PAWNS[0].slug)} /><span><small>{player?.name ?? "Player"} gives</small><strong>{spaceIndexes.length} deed{spaceIndexes.length === 1 ? "" : "s"}{cash > 0 ? ` + ${money(cash)}` : ""}</strong></span></div>
+      <div className="trade-offer-deeds">{spaceIndexes.map((spaceIndex) => { const space = SPACE_BY_INDEX.get(spaceIndex); return space ? <span key={space.index} style={{ "--district-color": space.districtColor } as CSSProperties}><i style={{ backgroundImage: `url(${space.asset})` }} /><b>{space.name}</b></span> : null; })}</div>
+      {spaceIndexes.length === 0 && <div className="trade-cash-only"><Coins /> {money(cash)} cash</div>}
+    </section>
+  );
+}
+
+function TradeOfferModal({ state, youId, onAction, busy }: { state: FortuneGameState; youId: string; onAction: (action: RoomAction) => void; busy: boolean }) {
+  const offer = state.tradeOffer;
+  if (!offer) return null;
+  const proposer = state.players.find((player) => player.id === offer.fromPlayerId);
+  const recipient = state.players.find((player) => player.id === offer.toPlayerId);
+  const isRecipient = youId === offer.toPlayerId;
+  const isProposer = youId === offer.fromPlayerId;
+  return (
+    <div className="trade-backdrop trade-offer-backdrop" role="presentation">
+      <section className="trade-offer-card" role="dialog" aria-modal="true" aria-labelledby="trade-offer-title">
+        <span className="trade-offer-kicker">Live offer on the Avenue</span>
+        <Handshake className="trade-offer-icon" aria-hidden="true" />
+        <h2 id="trade-offer-title">{isRecipient ? `${proposer?.name ?? "A player"} wants to deal` : isProposer ? `Offer sent to ${recipient?.name ?? "player"}` : "A deal is on the table"}</h2>
+        <p>{isRecipient ? "Review both sides. You control whether the deeds and cash change hands." : isProposer ? `${recipient?.name ?? "The other player"} can approve or decline this exact offer.` : `${proposer?.name ?? "A player"} and ${recipient?.name ?? "another player"} are negotiating.`}</p>
+        <div className="trade-offer-exchange">
+          <TradeBundle state={state} playerId={offer.fromPlayerId} spaceIndexes={offer.offeredSpaceIndexes} cash={offer.offeredCash} />
+          <ArrowLeftRight aria-hidden="true" />
+          <TradeBundle state={state} playerId={offer.toPlayerId} spaceIndexes={offer.requestedSpaceIndexes} cash={offer.requestedCash} />
+        </div>
+        {isRecipient ? <div className="trade-response-buttons"><button className="trade-decline-button" type="button" disabled={busy} onClick={() => onAction({ type: "trade-decline" })}><X /> Decline</button><button className="trade-accept-button" type="button" disabled={busy} onClick={() => onAction({ type: "trade-accept" })}><Check /> Accept deal</button></div> : isProposer ? <div className="trade-response-buttons is-waiting"><span><i /> Waiting for an answer</span><button className="trade-decline-button" type="button" disabled={busy} onClick={() => onAction({ type: "trade-decline" })}>Withdraw offer</button></div> : <div className="trade-spectator"><i /> The table resumes when they decide.</div>}
+      </section>
+    </div>
+  );
+}
+
+function LandmarkStealModal({ state, youId, onAction, busy }: { state: FortuneGameState; youId: string; onAction: (action: RoomAction) => void; busy: boolean }) {
+  const choice = state.landmarkStealChoice;
+  if (!choice) return null;
+  const chooser = state.players.find((player) => player.id === choice.playerId);
+  const isChooser = choice.playerId === youId;
+  const card = PLOT_CARDS.find((candidate) => candidate.title === "Steal a Landmark");
+  const targets = choice.eligibleSpaceIndexes.flatMap((spaceIndex) => {
+    const space = SPACE_BY_INDEX.get(spaceIndex);
+    const property = state.properties[String(spaceIndex)];
+    const owner = property ? state.players.find((player) => player.id === property.ownerId) : null;
+    return space && property && owner ? [{ space, property, owner }] : [];
+  });
+  return (
+    <div className="steal-backdrop" role="presentation">
+      <section className="steal-landmark" role="dialog" aria-modal="true" aria-labelledby="steal-title">
+        <div className="steal-card-art">{card && <Image src={card.image} width={432} height={600} alt="Steal a Landmark Plot Twist card" unoptimized />}</div>
+        <div className="steal-copy">
+          <span className="steal-kicker">Plot Twist choice</span>
+          <h2 id="steal-title">{isChooser ? "Choose the landmark" : `${chooser?.name ?? "A player"} is choosing`}</h2>
+          <p>{isChooser ? "Tap the exact rival deed you want. Its owner immediately receives the amount they originally paid." : "The Avenue is paused while they pick one eligible rival landmark."}</p>
+          <div className="steal-targets">
+            {targets.map(({ space, property, owner }) => {
+              const paid = property.purchasePrice ?? space.price;
+              return (
+                <button key={space.index} type="button" disabled={!isChooser || busy} style={{ "--district-color": space.districtColor } as CSSProperties} onClick={() => onAction({ type: "steal-landmark", spaceIndex: space.index })}>
+                  <span className="steal-target-art" style={{ backgroundImage: `url(${space.asset})` }} />
+                  <span><small>{space.districtName}</small><strong>{space.name}</strong><em>Pay {owner.name} {money(paid)}</em></span>
+                  <PawnPortrait pawn={pawnBySlug(owner.pawnSlug)} />
+                </button>
+              );
+            })}
+          </div>
+          {isChooser ? <div className="steal-instruction"><i /> Select one deed to finish the card</div> : <div className="steal-instruction"><i /> Waiting for {chooser?.name ?? "the player"}</div>}
         </div>
       </section>
     </div>
@@ -349,9 +786,9 @@ function SpaceInspector({ space, state, onClose }: { space: SpaceDefinition; sta
   );
 }
 
-export function CardReveal({ event, onClose }: { event: GameEvent; onClose: () => void }) {
+export function CardReveal({ event, drawerName, onClose }: { event: GameEvent; drawerName?: string; onClose: () => void }) {
   if (!event.card) return null;
-  return <div className={`modal-backdrop card-backdrop deck-${event.card.deck}`} role="presentation" onMouseDown={onClose}><section className="card-reveal" role="dialog" aria-modal="true" aria-label={`${event.card.title} card`} onMouseDown={(click) => click.stopPropagation()}><div className="card-aura" /><Image src={event.card.image} width={432} height={600} alt={`${event.card.title}: ${event.card.effect}`} unoptimized /><div className="card-reveal-copy"><span>{event.card.deck === "lucky-break" ? "Lucky Break" : "Plot Twist"}</span><h2>{event.card.title}</h2><p>{event.message}</p><button className="gold-button compact" type="button" onClick={onClose}>Keep rolling</button></div></section></div>;
+  return <div className={`modal-backdrop card-backdrop deck-${event.card.deck}`} role="presentation" onMouseDown={onClose}><section className="card-reveal" role="dialog" aria-modal="true" aria-label={`${event.card.title} card drawn by ${drawerName ?? "a player"}`} onMouseDown={(click) => click.stopPropagation()}><div className="card-aura" /><Image src={event.card.image} width={432} height={600} alt={`${event.card.title}: ${event.card.effect}`} unoptimized /><div className="card-reveal-copy"><span>{event.card.deck === "lucky-break" ? "Lucky Break" : "Plot Twist"} • Drawn by {drawerName ?? "Avenue player"}</span><h2>{event.card.title}</h2><p>{event.message}</p><button className="gold-button compact" type="button" onClick={onClose}>Show the table</button></div></section></div>;
 }
 
 function WinnerReveal({ state, onRules }: { state: FortuneGameState; onRules: () => void }) {
@@ -361,6 +798,7 @@ function WinnerReveal({ state, onRules }: { state: FortuneGameState; onRules: ()
 }
 
 export function GameScreen({ state, you, onAction, onShare, onRules, onHome, busy, muted, onToggleMuted, onMotionChange, selectedSpace, setSelectedSpace }: { state: FortuneGameState; you: { playerId: string; isHost: boolean }; onAction: (action: RoomAction) => void; onShare: () => void; onRules: () => void; onHome: () => void; busy: boolean; muted: boolean; onToggleMuted: () => void; onMotionChange: (moving: boolean) => void; selectedSpace: SpaceDefinition | null; setSelectedSpace: (space: SpaceDefinition | null) => void }) {
+  const [tradeOpen, setTradeOpen] = useState(false);
   const [displayPositions, setDisplayPositions] = useState<Record<string, number>>(
     () => Object.fromEntries(state.players.map((player) => [player.id, player.position])),
   );
@@ -456,12 +894,23 @@ export function GameScreen({ state, you, onAction, onShare, onRules, onHome, bus
     ? Math.max(0, movementView.event.movement.steps - movementView.step)
     : 0;
   const controlsBusy = busy || motionBusy;
+  const active = currentPlayer(state);
+  const canOpenTrade = state.phase === "playing"
+    && active?.id === you.playerId
+    && !active.bankrupt
+    && state.pendingPurchase === null
+    && !state.auction
+    && !state.tradeOffer
+    && state.players.some((player) => player.id !== you.playerId && !player.bankrupt);
   return (
     <main className={`game-screen theme-${state.theme}`}>
-      <header className="game-topbar"><button className="mini-logo" type="button" onClick={onHome} aria-label="Return to menu"><span>F</span> Fortune Avenue</button><div className="topbar-room"><span>Room</span><strong>{state.code}</strong><i>{state.kind === "friends" ? "Friends" : "Bot match"}</i></div><div className="topbar-actions"><button type="button" onClick={onToggleMuted}>{muted ? "Sound off" : "Sound on"}</button><button type="button" onClick={onRules}>Rules</button><button className="invite-topbar" type="button" onClick={onShare}>Invite</button></div></header>
+      <header className="game-topbar"><button className="mini-logo" type="button" onClick={onHome} aria-label="Return to menu"><Image src="/app-icon-192.png" width={34} height={34} alt="" unoptimized /> Fortune Avenue</button><div className="topbar-room"><span>Room</span><strong>{state.code}</strong><i>{state.kind === "friends" ? "Friends" : "Bot match"}</i></div><div className="topbar-actions"><button type="button" onClick={onToggleMuted}>{muted ? "Sound off" : "Sound on"}</button><button type="button" onClick={onRules}>Rules</button><button className="trade-topbar" type="button" disabled={!canOpenTrade || controlsBusy} title={!canOpenTrade ? "Trade on your turn after resolving the current space." : "Open the Avenue trade table"} onClick={() => setTradeOpen(true)}><Handshake /> Trade</button><button className="invite-topbar" type="button" onClick={onShare}>Invite</button></div></header>
       <PlayerRail state={state} youId={you.playerId} />
       <div className="game-layout"><section className="board-shell"><div className="board-glow" />{movementView && movingPlayer && <div className="movement-banner" role="status"><PawnPortrait pawn={pawnBySlug(movingPlayer.pawnSlug)} /><span><strong>{movingPlayer.name} is cruising the Avenue</strong><small>{remainingSteps > 0 ? `${remainingSteps} ${remainingSteps === 1 ? "space" : "spaces"} to go` : "Arriving now"}</small></span><i /></div>}<div className="game-board" aria-label="Fortune Avenue game board">{SPACES.map((space) => <SpaceTile key={space.index} space={space} state={state} displayPositions={displayPositions} movingPlayerId={movingPlayerId} onSelect={setSelectedSpace} />)}<BoardCenter state={state} you={you} onAction={onAction} busy={controlsBusy} /></div></section><aside className="game-sidebar"><DeedPanel state={state} playerId={you.playerId} onUpgrade={(spaceIndex) => onAction({ type: "upgrade", spaceIndex })} busy={controlsBusy} /><EventLog state={state} /></aside></div>
       {state.auction && !motionBusy && <AuctionHouse state={state} you={you} onAction={onAction} busy={busy} />}
+      {tradeOpen && !state.tradeOffer && <TradeBuilder state={state} youId={you.playerId} onAction={onAction} onClose={() => setTradeOpen(false)} busy={busy} />}
+      {state.tradeOffer && <TradeOfferModal state={state} youId={you.playerId} onAction={onAction} busy={busy} />}
+      {state.landmarkStealChoice && <LandmarkStealModal state={state} youId={you.playerId} onAction={onAction} busy={busy} />}
       {selectedSpace && <SpaceInspector space={selectedSpace} state={state} onClose={() => setSelectedSpace(null)} />}
       {state.phase === "finished" && <WinnerReveal state={state} onRules={onRules} />}
     </main>

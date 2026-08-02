@@ -12,6 +12,11 @@ const ACTIONS = new Set([
   "start-auction",
   "auction-bid",
   "auction-pass",
+  "auction-tick",
+  "propose-trade",
+  "trade-accept",
+  "trade-decline",
+  "steal-landmark",
   "upgrade",
   "use-card",
   "end-turn",
@@ -40,7 +45,9 @@ export async function POST(request: Request, context: { params: Promise<{ code: 
       return Response.json({ error: "The room advanced. Refreshing the table.", state: source }, { status: 409 });
     }
     let state = applyRoomAction(source, body.playerId, body.action);
-    state = runBotTurns(state);
+    if (body.action.type !== "auction-tick" || !state.auction) {
+      state = runBotTurns(state, { singleAuctionStep: true });
+    }
     await saveRoom(state, source.revision);
     return Response.json({
       state,

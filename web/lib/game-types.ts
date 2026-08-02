@@ -68,6 +68,7 @@ export interface PlayerState {
 export interface PropertyState {
   spaceIndex: number;
   ownerId: string;
+  purchasePrice?: number;
   upgrades: number;
   closedUntilTurn: number;
   rentMultiplierUntilTurn: number;
@@ -108,10 +109,27 @@ export interface AuctionState {
   spaceIndex: number;
   currentBid: number;
   highBidderId: string | null;
+  participantIds: string[];
   eligibleBidderIds: string[];
   currentBidderId: string;
   minimumIncrement: number;
   initiatedById: string;
+}
+
+export interface TradeOffer {
+  id: string;
+  fromPlayerId: string;
+  toPlayerId: string;
+  offeredSpaceIndexes: number[];
+  requestedSpaceIndexes: number[];
+  offeredCash: number;
+  requestedCash: number;
+  createdTurn: number;
+}
+
+export interface LandmarkStealChoice {
+  playerId: string;
+  eligibleSpaceIndexes: number[];
 }
 
 export type GameEventType =
@@ -121,6 +139,7 @@ export type GameEventType =
   | "space"
   | "purchase"
   | "auction"
+  | "trade"
   | "rent"
   | "upgrade"
   | "card"
@@ -169,6 +188,8 @@ export interface FortuneGameState {
   rolled: boolean;
   pendingPurchase: number | null;
   auction: AuctionState | null;
+  tradeOffer: TradeOffer | null;
+  landmarkStealChoice: LandmarkStealChoice | null;
   luckyDeck: number[];
   plotDeck: number[];
   luckyCursor: number;
@@ -190,6 +211,11 @@ export type RoomAction =
   | { type: "start-auction" }
   | { type: "auction-bid"; amount: number }
   | { type: "auction-pass" }
+  | { type: "auction-tick" }
+  | { type: "propose-trade"; toPlayerId: string; offeredSpaceIndexes: number[]; requestedSpaceIndexes: number[]; offeredCash: number; requestedCash: number }
+  | { type: "trade-accept" }
+  | { type: "trade-decline" }
+  | { type: "steal-landmark"; spaceIndex: number }
   | { type: "upgrade"; spaceIndex: number }
   | { type: "use-card"; cardId: string }
   | { type: "end-turn" };

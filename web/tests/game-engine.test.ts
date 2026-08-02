@@ -45,6 +45,7 @@ test("uses the complete approved game collection", () => {
   assert.equal(SPACES.filter((space) => space.kind === "landmark").length, 24);
   assert.equal(LUCKY_CARDS.length, 24);
   assert.equal(PLOT_CARDS.length, 24);
+  assert.equal(PLOT_CARDS[18].title, "Steal a Landmark");
   assert.equal(PAWNS.length, 9);
   assert.equal(SPACE_BY_INDEX.get(2)?.name, "Bicth Valley");
   assert.ok(SPACES.every((space) => space.asset.endsWith(".webp")));
@@ -154,6 +155,137 @@ test("runs a live auction through bids, folds, and a final deed sale", () => {
   assert.equal(state.properties["1"]?.ownerId, "friend");
   assert.equal(state.players[1].cash, 1360);
   assert.equal(state.lastEvent?.title, "Sold!");
+});
+
+test("lets a player skip an auction and continue the turn", () => {
+  let state = startGame(lobby(1));
+  state.rolled = true;
+  state.pendingPurchase = 1;
+
+  state = applyRoomAction(state, "host", { type: "skip-purchase" });
+
+  assert.equal(state.pendingPurchase, null);
+  assert.equal(state.auction, null);
+  assert.equal(state.lastEvent?.title, "Deed passed");
+  state = applyRoomAction(state, "host", { type: "end-turn" });
+  assert.equal(currentPlayer(state)?.isBot, true);
+});
+
+test("paces bot auction decisions one visible bid or fold at a time", () => {
+  let state = startGame(lobby(3));
+  state.rolled = true;
+  state.pendingPurchase = 1;
+  state = applyRoomAction(state, "host", { type: "start-auction" });
+  const firstBidder = state.auction?.currentBidderId;
+  const auctionEvents = state.log.filter((event) => event.type === "auction").length;
+
+  state = runBotTurns(state, { singleAuctionStep: true });
+
+  assert.ok(state.auction);
+  assert.notEqual(state.auction?.currentBidderId, firstBidder);
+  assert.equal(state.log.filter((event) => event.type === "auction").length, auctionEvents + 1);
+});
+
+test("trades landmarks and cash only after the receiving player approves", () => {
+  const withFriend = addHumanPlayer(lobby(0), "friend", "Friend", "fortune-key");
+  let state = startGame(withFriend);
+  state.properties["1"] = { spaceIndex: 1, ownerId: "host", upgrades: 0, closedUntilTurn: 0, rentMultiplierUntilTurn: 0, nextVisitorFree: false };
+  state.properties["2"] = { spaceIndex: 2, ownerId: "friend", upgrades: 0, closedUntilTurn: 0, rentMultiplierUntilTurn: 0, nextVisitorFree: false };
+
+  state = applyRoomAction(state, "host", {
+    type: "propose-trade",
+    toPlayerId: "friend",
+    offeredSpaceIndexes: [1],
+    requestedSpaceIndexes: [2],
+    offeredCash: 200,
+    requestedCash: 0,
+  });
+  assert.equal(state.tradeOffer?.toPlayerId, "friend");
+  assert.equal(state.properties["1"].ownerId, "host");
+  assert.equal(state.players[0].cash, 1400);
+
+  state = applyRoomAction(state, "friend", { type: "trade-accept" });
+  assert.equal(state.tradeOffer, null);
+  assert.equal(state.properties["1"].ownerId, "friend");
+  assert.equal(state.properties["2"].ownerId, "host");
+  assert.equal(state.players[0].cash, 1200);
+  assert.equal(state.players[1].cash, 1600);
+  assert.equal(state.lastEvent?.title, "Deal accepted");
+});
+
+test("leaves deeds and cash untouched when a trade is declined", () => {
+  const withFriend = addHumanPlayer(lobby(0), "friend", "Friend", "fortune-key");
+  let state = startGame(withFriend);
+  state.properties["1"] = { spaceIndex: 1, ownerId: "host", upgrades: 0, closedUntilTurn: 0, rentMultiplierUntilTurn: 0, nextVisitorFree: false };
+  state.properties["2"] = { spaceIndex: 2, ownerId: "friend", upgrades: 0, closedUntilTurn: 0, rentMultiplierUntilTurn: 0, nextVisitorFree: false };
+  state = applyRoomAction(state, "host", { type: "propose-trade", toPlayerId: "friend", offeredSpaceIndexes: [1], requestedSpaceIndexes: [2], offeredCash: 50, requestedCash: 0 });
+  state = applyRoomAction(state, "friend", { type: "trade-decline" });
+
+  assert.equal(state.tradeOffer, null);
+  assert.equal(state.properties["1"].ownerId, "host");
+  assert.equal(state.properties["2"].ownerId, "friend");
+  assert.equal(state.players[0].cash, 1400);
+  assert.equal(state.players[1].cash, 1400);
+  assert.equal(state.lastEvent?.title, "Trade declined");
+});
+
+test("bots approve strong offers and decline bad ones", () => {
+  let generous = startGame(lobby(1));
+  const botId = generous.players[1].id;
+  generous.properties["1"] = { spaceIndex: 1, ownerId: "host", upgrades: 0, closedUntilTurn: 0, rentMultiplierUntilTurn: 0, nextVisitorFree: false };
+  generous.properties["2"] = { spaceIndex: 2, ownerId: botId, upgrades: 0, closedUntilTurn: 0, rentMultiplierUntilTurn: 0, nextVisitorFree: false };
+  generous = applyRoomAction(generous, "host", { type: "propose-trade", toPlayerId: botId, offeredSpaceIndexes: [1], requestedSpaceIndexes: [2], offeredCash: 800, requestedCash: 0 });
+  generous = runBotTurns(generous);
+  assert.equal(generous.properties["1"].ownerId, botId);
+  assert.equal(generous.properties["2"].ownerId, "host");
+  assert.equal(generous.lastEvent?.title, "Deal accepted");
+
+  let stingy = startGame(lobby(1));
+  const stingyBotId = stingy.players[1].id;
+  stingy.properties["2"] = { spaceIndex: 2, ownerId: stingyBotId, upgrades: 0, closedUntilTurn: 0, rentMultiplierUntilTurn: 0, nextVisitorFree: false };
+  stingy = applyRoomAction(stingy, "host", { type: "propose-trade", toPlayerId: stingyBotId, offeredSpaceIndexes: [], requestedSpaceIndexes: [2], offeredCash: 10, requestedCash: 0 });
+  stingy = runBotTurns(stingy);
+  assert.equal(stingy.properties["2"].ownerId, stingyBotId);
+  assert.equal(stingy.tradeOffer, null);
+  assert.equal(stingy.lastEvent?.title, "Trade declined");
+});
+
+test("protects crowned districts from being broken by a trade", () => {
+  const withFriend = addHumanPlayer(lobby(0), "friend", "Friend", "fortune-key");
+  const state = startGame(withFriend);
+  state.properties["1"] = { spaceIndex: 1, ownerId: "host", upgrades: 1, closedUntilTurn: 0, rentMultiplierUntilTurn: 0, nextVisitorFree: false };
+  state.properties["2"] = { spaceIndex: 2, ownerId: "friend", upgrades: 0, closedUntilTurn: 0, rentMultiplierUntilTurn: 0, nextVisitorFree: false };
+  assert.throws(
+    () => applyRoomAction(state, "host", { type: "propose-trade", toPlayerId: "friend", offeredSpaceIndexes: [1], requestedSpaceIndexes: [2], offeredCash: 0, requestedCash: 0 }),
+    /crowns or a castle/,
+  );
+});
+
+test("Steal a Landmark lets the drawer select an exact rival deed and pays its recorded price", () => {
+  const withFriend = addHumanPlayer(lobby(0), "friend", "Friend", "fortune-key");
+  const initial = startGame(withFriend);
+  const probe = applyRoomAction(initial, "host", { type: "roll" });
+  const total = (probe.dice?.[0] ?? 0) + (probe.dice?.[1] ?? 0);
+  initial.players[0].position = ((9 - total) % SPACES.length + SPACES.length) % SPACES.length;
+  initial.plotDeck = [18];
+  initial.plotCursor = 0;
+  initial.properties["1"] = { spaceIndex: 1, ownerId: "host", purchasePrice: 90, upgrades: 0, closedUntilTurn: 0, rentMultiplierUntilTurn: 0, nextVisitorFree: false };
+  initial.properties["2"] = { spaceIndex: 2, ownerId: "host", purchasePrice: 110, upgrades: 0, closedUntilTurn: 0, rentMultiplierUntilTurn: 0, nextVisitorFree: false };
+  initial.properties["4"] = { spaceIndex: 4, ownerId: "friend", purchasePrice: 73, upgrades: 0, closedUntilTurn: 0, rentMultiplierUntilTurn: 0, nextVisitorFree: false };
+  initial.properties["5"] = { spaceIndex: 5, ownerId: "friend", purchasePrice: 150, upgrades: 0, closedUntilTurn: 0, rentMultiplierUntilTurn: 0, nextVisitorFree: false };
+
+  let state = applyRoomAction(initial, "host", { type: "roll" });
+  assert.equal(state.log.find((event) => event.card)?.card?.title, "Steal a Landmark");
+  assert.deepEqual(state.landmarkStealChoice?.eligibleSpaceIndexes.sort((a, b) => a - b), [4, 5]);
+  assert.throws(() => applyRoomAction(state, "host", { type: "end-turn" }), /Choose the landmark/);
+
+  state = applyRoomAction(state, "host", { type: "steal-landmark", spaceIndex: 4 });
+  assert.equal(state.landmarkStealChoice, null);
+  assert.equal(state.properties["4"].ownerId, "host");
+  assert.equal(state.players[0].cash, 1327);
+  assert.equal(state.players[1].cash, 1473);
+  assert.equal(state.lastEvent?.title, "Landmark taken!");
+  assert.equal(state.lastEvent?.moneyTransfer?.amount, 73);
 });
 
 test("records every dice move for step-by-step pawn travel", () => {
