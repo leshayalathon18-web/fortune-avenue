@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#07100d" />
+    <meta name="description" content="Launch the complete Fortune Avenue board game with bots or friends." />
+    <title>Fortune Avenue — itch.io Edition</title>
+    <link rel="icon" href="./assets/app-icon.png" />
+    <style>
+      :root {
+        color-scheme: dark;
+        --gold: #f3d77d;
+        --emerald: #20c69a;
+        --ink: #030907;
+        --cream: #fff2ca;
+      }
+
+      * { box-sizing: border-box; }
+      html, body { min-height: 100%; margin: 0; }
+
+      body {
+        min-height: 100vh;
+        min-height: 100dvh;
+        overflow-x: hidden;
+        background:
+          radial-gradient(circle at 15% 18%, rgba(24, 145, 108, 0.23), transparent 35%),
+          radial-gradient(circle at 84% 82%, rgba(178, 30, 58, 0.2), transparent 38%),
+          var(--ink);
+        color: var(--cream);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      body::before {
+        position: fixed;
+        inset: 0;
+        background-image:
+          radial-gradient(circle, rgba(255, 222, 126, 0.85) 0 1px, transparent 1.6px),
+          radial-gradient(circle, rgba(49, 215, 165, 0.5) 0 1px, transparent 1.6px);
+        background-position: 0 0, 31px 47px;
+        background-size: 79px 93px, 113px 127px;
+        content: "";
+        opacity: 0.3;
+        pointer-events: none;
+        animation: drift 18s linear infinite;
+      }
+
+      .shell {
+        position: relative;
+        z-index: 1;
+        min-height: 100vh;
+        min-height: 100dvh;
+        display: grid;
+        place-items: center;
+        padding: max(18px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right)) max(18px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left));
+      }
+
+      .launch-card {
+        width: min(1120px, 100%);
+        display: grid;
+        grid-template-columns: minmax(0, 1.36fr) minmax(300px, 0.64fr);
+        overflow: hidden;
+        border: 1px solid rgba(247, 211, 111, 0.72);
+        border-radius: 28px;
+        background: linear-gradient(145deg, rgba(10, 29, 23, 0.98), rgba(16, 5, 8, 0.98));
+        box-shadow: 0 40px 120px rgba(0, 0, 0, 0.68), 0 0 50px rgba(220, 174, 63, 0.12), inset 0 1px rgba(255, 255, 255, 0.08);
+      }
+
+      .cover {
+        position: relative;
+        min-height: 500px;
+        background: #07110d;
+      }
+
+      .cover::after {
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(90deg, transparent 60%, rgba(5, 11, 8, 0.88)), linear-gradient(0deg, rgba(3, 8, 6, 0.42), transparent 35%);
+        content: "";
+        pointer-events: none;
+      }
+
+      .cover img {
+        width: 100%;
+        height: 100%;
+        display: block;
+        object-fit: cover;
+        object-position: center;
+      }
+
+      .live-ribbon {
+        position: absolute;
+        left: 24px;
+        top: 24px;
+        z-index: 2;
+        display: inline-flex;
+        align-items: center;
+        gap: 9px;
+        padding: 10px 14px;
+        border: 1px solid rgba(255, 226, 138, 0.72);
+        border-radius: 999px;
+        background: rgba(2, 10, 7, 0.78);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.38);
+        color: #ffe89e;
+        font-size: 11px;
+        font-weight: 900;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        backdrop-filter: blur(10px);
+      }
+
+      .live-ribbon i {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: var(--emerald);
+        box-shadow: 0 0 13px var(--emerald);
+        animation: pulse 1.5s ease-in-out infinite;
+      }
+
+      .copy {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        padding: clamp(30px, 5vw, 58px);
+      }
+
+      .copy::before {
+        position: absolute;
+        inset: 14px;
+        border: 1px solid rgba(239, 201, 103, 0.2);
+        border-radius: 18px;
+        content: "";
+        pointer-events: none;
+      }
+
+      .app-mark {
+        position: relative;
+        width: 78px;
+        height: 78px;
+        margin-bottom: 24px;
+        border: 1px solid rgba(255, 226, 137, 0.72);
+        border-radius: 22px;
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4), 0 0 24px rgba(214, 170, 59, 0.17);
+      }
+
+      .kicker {
+        margin: 0 0 9px;
+        color: var(--gold);
+        font-size: 11px;
+        font-weight: 900;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        margin: 0;
+        color: var(--gold);
+        font-family: Georgia, "Times New Roman", serif;
+        font-size: clamp(44px, 5.2vw, 74px);
+        line-height: 0.88;
+        text-shadow: 0 2px 18px rgba(226, 174, 51, 0.18);
+      }
+
+      .tagline {
+        margin: 20px 0 0;
+        color: rgba(255, 245, 217, 0.74);
+        font-size: 16px;
+        line-height: 1.6;
+      }
+
+      .features {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 24px 0 28px;
+      }
+
+      .features span {
+        padding: 7px 10px;
+        border: 1px solid rgba(67, 213, 167, 0.25);
+        border-radius: 999px;
+        background: rgba(18, 89, 68, 0.18);
+        color: #d8fff1;
+        font-size: 10px;
+        font-weight: 850;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .launch {
+        position: relative;
+        display: grid;
+        place-items: center;
+        min-height: 62px;
+        padding: 14px 24px;
+        overflow: hidden;
+        border: 1px solid #ffedaa;
+        border-radius: 16px;
+        background: linear-gradient(145deg, #f9dc7a, #bd841e 70%, #845411);
+        box-shadow: inset 0 1px rgba(255, 255, 255, 0.65), 0 12px 26px rgba(0, 0, 0, 0.4), 0 0 24px rgba(219, 172, 52, 0.16);
+        color: #160d02;
+        font-size: 14px;
+        font-weight: 950;
+        letter-spacing: 0.11em;
+        text-align: center;
+        text-decoration: none;
+        text-transform: uppercase;
+        transition: filter 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+      }
+
+      .launch::after {
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(110deg, transparent 25%, rgba(255, 255, 255, 0.36) 48%, transparent 70%);
+        content: "";
+        transform: translateX(-130%);
+        animation: shine 3s ease-in-out infinite;
+      }
+
+      .launch:hover { filter: brightness(1.08); transform: translateY(-2px); box-shadow: inset 0 1px rgba(255, 255, 255, 0.72), 0 16px 32px rgba(0, 0, 0, 0.45), 0 0 32px rgba(219, 172, 52, 0.23); }
+      .launch:active { transform: translateY(1px) scale(0.985); }
+      .launch:focus-visible { outline: 3px solid var(--emerald); outline-offset: 4px; }
+
+      .same-window {
+        align-self: center;
+        margin-top: 15px;
+        color: rgba(255, 241, 202, 0.68);
+        font-size: 11px;
+        font-weight: 750;
+        text-underline-offset: 3px;
+      }
+
+      .note {
+        margin: 16px 0 0;
+        color: rgba(232, 231, 219, 0.52);
+        font-size: 10px;
+        line-height: 1.45;
+        text-align: center;
+      }
+
+      @keyframes pulse { 50% { opacity: 0.45; transform: scale(0.72); } }
+      @keyframes shine { 0%, 54% { transform: translateX(-130%); } 78%, 100% { transform: translateX(130%); } }
+      @keyframes drift { to { background-position: 79px 93px, -82px -80px; } }
+
+      @media (max-width: 780px) {
+        .shell { align-items: start; }
+        .launch-card { grid-template-columns: 1fr; border-radius: 22px; }
+        .cover { min-height: auto; aspect-ratio: 3 / 2; }
+        .cover::after { background: linear-gradient(0deg, rgba(7, 16, 12, 0.85), transparent 45%); }
+        .live-ribbon { left: 14px; top: 14px; padding: 8px 11px; font-size: 8px; }
+        .copy { padding: 28px 24px 30px; text-align: center; }
+        .app-mark { width: 62px; height: 62px; margin: -55px auto 20px; z-index: 3; }
+        h1 { font-size: clamp(42px, 15vw, 62px); }
+        .tagline { margin-top: 14px; font-size: 14px; }
+        .features { justify-content: center; margin-block: 20px 24px; }
+        .launch { min-height: 58px; }
+      }
+
+      @media (max-height: 610px) and (orientation: landscape) {
+        .shell { padding: 10px; }
+        .launch-card { grid-template-columns: minmax(0, 1.2fr) minmax(290px, 0.8fr); }
+        .cover { min-height: calc(100dvh - 20px); }
+        .copy { padding: 24px 30px; text-align: left; }
+        .app-mark { width: 54px; height: 54px; margin: 0 0 13px; }
+        h1 { font-size: 42px; }
+        .tagline { margin-top: 10px; font-size: 12px; }
+        .features { justify-content: flex-start; margin-block: 13px 16px; }
+        .features span { font-size: 8px; padding: 5px 8px; }
+        .launch { min-height: 48px; }
+        .same-window { margin-top: 9px; }
+        .note { display: none; }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <section class="launch-card" aria-labelledby="game-title">
+        <div class="cover">
+          <img src="./assets/cover.webp" alt="Fortune Avenue board and colorful pawn collection" />
+          <span class="live-ribbon"><i aria-hidden="true"></i> Live game edition</span>
+        </div>
+        <div class="copy">
+          <img class="app-mark" src="./assets/app-icon.png" alt="" aria-hidden="true" />
+          <p class="kicker">Choose your chaos</p>
+          <h1 id="game-title">Fortune<br />Avenue</h1>
+          <p class="tagline">Claim ridiculous landmarks, spring custom cards, and chase the Fortune Crown with bots or friends.</p>
+          <div class="features" aria-label="Game features">
+            <span>2–6 players</span><span>Bot play</span><span>Friend codes</span><span>Shake dice</span>
+          </div>
+          <a class="launch" href="https://fortune-avenue-live.spotifyps5email.chatgpt.site/opening?release=13&amp;utm_source=itchio" target="_blank" rel="noopener noreferrer">Enter Fortune Avenue</a>
+          <a class="same-window" href="https://fortune-avenue-live.spotifyps5email.chatgpt.site/opening?release=13&amp;utm_source=itchio">Play in this window instead</a>
+          <p class="note">Opening the live edition keeps room codes, multiplayer sessions, and mobile motion dice working.</p>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

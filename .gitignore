@@ -4,3 +4,7 @@
 # Python caches
 __pycache__/
 *.py[cod]
+
+# Local build artifacts
+web/.vite/
+releases/*.zip
