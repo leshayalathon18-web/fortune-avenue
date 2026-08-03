@@ -16,7 +16,7 @@ test("ships the finished Fortune Avenue opening and social metadata", async () =
     readFile(new URL("../app/error.tsx", import.meta.url), "utf8"),
   ]);
   assert.match(opening, /Enter the Avenue/);
-  assert.match(opening, /href="\/play\?release=16"/);
+  assert.match(opening, /href="\/play\?release=17"/);
   assert.match(opening, /z-index: 2147483647/);
   assert.match(opening, /\.panel \{[^}]*opacity: 1;[^}]*visibility: visible;/);
   assert.match(opening, /url\("\/og\.png\?cover=2"\)/);
@@ -24,8 +24,8 @@ test("ships the finished Fortune Avenue opening and social metadata", async () =
   assert.doesNotMatch(opening, /<script\b/i);
   assert.match(layout, /Fortune Avenue.+Play with bots or friends/);
   assert.match(layout, /og\.png/);
-  assert.match(page, /redirect\("\/opening\.html\?release=16"\)/);
-  assert.match(launchPage, /redirect\("\/opening\.html\?release=16"\)/);
+  assert.match(page, /redirect\("\/opening\.html\?release=17"\)/);
+  assert.match(launchPage, /redirect\("\/opening\.html\?release=17"\)/);
   assert.match(playPage, /FortuneAvenueGame/);
   assert.match(game, /function storageGet/);
   assert.match(game, /seenCardEvents/);
@@ -56,6 +56,10 @@ test("ships the finished Fortune Avenue opening and social metadata", async () =
   assert.match(gameTable, /export function CashCollection/);
   assert.match(gameTable, /Cash to spend/);
   assert.match(gameTable, /className="player-cash"/);
+  assert.match(gameTable, /function DistrictMark/);
+  assert.match(gameTable, /function DistrictCollectionTracker/);
+  assert.match(gameTable, /Match the D-number \+ symbol/);
+  assert.match(gameTable, /Completes your 4\/4 district set/);
   assert.match(gameTable, /<Castle aria-hidden="true" \/>/);
   assert.match(shared, /Classic: 180 turns/);
   assert.doesNotMatch(`${game}${shared}`, /screen === "opening"|OpeningScreen/);
@@ -77,6 +81,9 @@ test("ships the finished Fortune Avenue opening and social metadata", async () =
   assert.match(styles, /\.cash-stack/);
   assert.match(styles, /\.spendable-balance \{/);
   assert.match(styles, /\.player-cash \{/);
+  assert.match(styles, /\.district-mark \{/);
+  assert.match(styles, /\.collection-tracker \{/);
+  assert.match(styles, /\[data-district="5"\]/);
   assert.match(styles, /@keyframes pawn-step/);
   assert.match(styles, /\.setup-card,[\s\S]*max-width: 980px;[\s\S]*min-width: 0;/);
   assert.match(errorScreen, /The Avenue needs one more roll/);
@@ -173,5 +180,5 @@ test("ships the Avenue expansion with profiles, spectators, rescue tools, and po
   assert.match(styles, /\.profile-panel \{/);
   assert.match(styles, /\.tutorial-card \{/);
   assert.match(styles, /@keyframes reaction-pop/);
-  assert.match(manifest, /"start_url": "\/opening\.html\?release=16"/);
+  assert.match(manifest, /"start_url": "\/opening\.html\?release=17"/);
 });

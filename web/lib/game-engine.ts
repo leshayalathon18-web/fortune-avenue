@@ -1054,7 +1054,7 @@ function applyCardEffect(
       const eligibleSpaceIndexes = freeUpgradeIndexes(state, player);
       return eligibleSpaceIndexes.length > 0
         ? beginCardChoice(state, player, card, { kind: "space", eligibleSpaceIndexes })
-        : "Complete a matching-color district before placing a crown.";
+        : "Complete all four landmarks with the same D-number and symbol before placing a crown.";
     }
     case "VIP Wristband":
       player.heldCards.push({ id: `vip-${state.turnNumber}-${state.rngSeed}`, title: card.title, effect: card.effect });

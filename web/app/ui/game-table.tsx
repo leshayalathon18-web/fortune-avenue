@@ -28,7 +28,7 @@ import {
   WalletCards,
   X,
 } from "lucide-react";
-import { DISTRICTS, GAME_TAGLINE, LUCKY_CARDS, MATCH_MODES, PAWNS, PLOT_CARDS, SPACE_BY_INDEX, SPACES } from "@/lib/game-data";
+import { DISTRICT_DETAILS, DISTRICTS, GAME_TAGLINE, LUCKY_CARDS, MATCH_MODES, PAWNS, PLOT_CARDS, SPACE_BY_INDEX, SPACES } from "@/lib/game-data";
 import {
   currentPlayer,
   mortgageValue,
@@ -74,6 +74,24 @@ function ownsFullDistrict(state: FortuneGameState, playerId: string, district: n
   const districtSpaces = SPACES.filter((space) => space.district === district);
   return districtSpaces.length > 0
     && districtSpaces.every((space) => state.properties[String(space.index)]?.ownerId === playerId);
+}
+
+function DistrictMark({ district, showName = false, className = "" }: { district: number | null; showName?: boolean; className?: string }) {
+  if (district === null) return null;
+  const detail = DISTRICT_DETAILS[district];
+  return (
+    <span
+      className={`district-mark ${className}`.trim()}
+      data-district={district}
+      style={{ "--district-color": detail.color } as CSSProperties}
+      aria-label={`${detail.code}, ${detail.name}`}
+      title={`${detail.code} • ${detail.name}`}
+    >
+      <span className="district-mark-symbol" aria-hidden="true">{detail.symbol}</span>
+      <span className="district-mark-code">{detail.code}</span>
+      {showName && <span className="district-mark-name">{detail.name}</span>}
+    </span>
+  );
 }
 
 function boardPosition(index: number) {
@@ -403,16 +421,20 @@ function SpaceTile({
   );
   const labelLines = BOARD_LABELS[space.index] ?? [space.name];
   const longestLine = Math.max(...labelLines.map((line) => line.length));
+  const districtDetail = space.district === null ? null : DISTRICT_DETAILS[space.district];
+  const districtLabel = districtDetail ? `, ${districtDetail.code} ${districtDetail.name}` : "";
   return (
     <button
       className={`board-space space-${space.kind} ${owner ? "is-owned" : ""} ${players.some((player) => player.id === movingPlayerId) ? "has-moving-token" : ""}`}
       style={{ ...boardPosition(space.index), "--district-color": space.districtColor, "--owner-color": owner?.color ?? "transparent" } as CSSProperties}
+      data-district={space.district ?? undefined}
       type="button"
-      title={`${space.name}${space.price ? ` - ${money(space.price)}` : ""}`}
-      aria-label={`${space.name}${space.price ? `, deed ${money(space.price)}` : ""}`}
+      title={`${space.name}${districtDetail ? ` • ${districtDetail.code} ${districtDetail.name}` : ""}${space.price ? ` • ${money(space.price)}` : ""}`}
+      aria-label={`${space.name}${districtLabel}${space.price ? `, deed ${money(space.price)}` : ""}`}
       onClick={() => onSelect(space)}
     >
       <span className="space-number">{space.index}</span>
+      <DistrictMark district={space.district} className="board-district-mark" />
       <span className="space-art" style={{ backgroundImage: `url(${space.asset})` }} />
       <span className={`space-name ${longestLine >= 10 ? "is-tight" : ""}`} aria-hidden="true">
         {labelLines.map((line) => <span key={line}>{line}</span>)}
@@ -437,6 +459,11 @@ function BoardCenter({ state, you, onAction, busy }: { state: FortuneGameState; 
   const pendingSpace = state.pendingPurchase === null ? null : SPACE_BY_INDEX.get(state.pendingPurchase);
   const youPlayer = state.players.find((player) => player.id === you.playerId);
   const balancePlayer = you.isSpectator ? active : youPlayer;
+  const pendingDistrictOwned = pendingSpace?.district === null || pendingSpace?.district === undefined
+    ? null
+    : SPACES.filter((space) => space.district === pendingSpace.district)
+      .filter((space) => state.properties[String(space.index)]?.ownerId === you.playerId)
+      .length;
   const luckyCoin = youPlayer?.heldCards.find((card) => card.title === "Lucky Coin");
   const turnsRemaining = Math.max(0, state.settings.maxTurns - state.turnNumber);
   const finaleNear = turnsRemaining <= 12 && state.phase === "playing";
@@ -460,7 +487,7 @@ function BoardCenter({ state, you, onAction, busy }: { state: FortuneGameState; 
         {state.phase === "finished" ? <div className="winner-mini">The Avenue has chosen.</div> : isYourTurn ? (
           <div className="turn-actions">
             {!state.rolled && luckyCoin && <button className="mini-action lucky-action" type="button" disabled={busy} onClick={() => onAction({ type: "use-card", cardId: luckyCoin.id })}>Use Lucky Coin</button>}
-            {pendingSpace && <div className="purchase-prompt"><strong>{pendingSpace.name}</strong><span>Claim for {money(Math.max(0, pendingSpace.price - (youPlayer?.purchaseDiscount ?? 0)))}</span><div><button type="button" className="mini-action buy-action" disabled={busy} onClick={() => onAction({ type: "buy" })}>Buy deed</button><button type="button" className="mini-action auction-action" disabled={busy} onClick={() => onAction({ type: "start-auction" })}>Auction</button><button type="button" className="mini-action skip-auction-action" disabled={busy} onClick={() => onAction({ type: "skip-purchase" })}>Skip auction</button></div></div>}
+            {pendingSpace && <div className="purchase-prompt"><DistrictMark district={pendingSpace.district} showName className="purchase-district-mark" /><strong>{pendingSpace.name}</strong>{pendingDistrictOwned !== null && <small className="purchase-set-progress">{pendingDistrictOwned === 3 ? "Completes your 4/4 district set" : `You own ${pendingDistrictOwned}/4 • buying makes ${pendingDistrictOwned + 1}/4`}</small>}<span>Claim for {money(Math.max(0, pendingSpace.price - (youPlayer?.purchaseDiscount ?? 0)))}</span><div><button type="button" className="mini-action buy-action" disabled={busy} onClick={() => onAction({ type: "buy" })}>Buy deed</button><button type="button" className="mini-action auction-action" disabled={busy} onClick={() => onAction({ type: "start-auction" })}>Auction</button><button type="button" className="mini-action skip-auction-action" disabled={busy} onClick={() => onAction({ type: "skip-purchase" })}>Skip auction</button></div></div>}
             {state.rolled && !pendingSpace && !state.auction && <button className="end-turn-button" type="button" disabled={busy} onClick={() => onAction({ type: "end-turn" })}>End turn</button>}
           </div>
         ) : <div className="waiting-turn"><i /> {you.isSpectator ? "Watching live • the table updates automatically" : "The table will update automatically"}</div>}
@@ -506,6 +533,7 @@ function AuctionHouse({
         <div className="auction-copy">
           <span className="auction-kicker">Deed auction</span>
           <h2 id="auction-title">{space?.name ?? "Mystery deed"}</h2>
+          {space && <DistrictMark district={space.district} showName className="auction-district-mark" />}
           <div className="auction-price"><small>Current bid</small><strong>{auction.currentBid > 0 ? money(auction.currentBid) : "Opening at F10"}</strong><span>{leader ? `${leader.name} is leading` : "No bids yet"}</span></div>
           <div className="auction-bidders" aria-label="Active bidders">
             {state.players.filter((player) => auction.participantIds.includes(player.id)).map((player) => (
@@ -573,7 +601,7 @@ function TradeDeedPicker({
             onClick={() => onToggle(space.index)}
           >
             <span className="trade-deed-art" style={{ backgroundImage: `url(${space.asset})` }} />
-            <span><strong>{space.name}</strong><small>{locked ? "Portfolio locked" : `${money(space.price)} deed`}</small></span>
+            <span><DistrictMark district={space.district} /><strong>{space.name}</strong><small>{locked ? "Portfolio locked" : `${money(space.price)} deed`}</small></span>
             <i aria-hidden="true">{checked ? <Check /> : null}</i>
           </button>
         );
@@ -665,7 +693,7 @@ function TradeBundle({ state, playerId, spaceIndexes, cash }: { state: FortuneGa
   return (
     <section className="trade-offer-bundle">
       <div><PawnPortrait pawn={pawnBySlug(player?.pawnSlug ?? PAWNS[0].slug)} /><span><small>{player?.name ?? "Player"} gives</small><strong>{spaceIndexes.length} deed{spaceIndexes.length === 1 ? "" : "s"}{cash > 0 ? ` + ${money(cash)}` : ""}</strong></span></div>
-      <div className="trade-offer-deeds">{spaceIndexes.map((spaceIndex) => { const space = SPACE_BY_INDEX.get(spaceIndex); return space ? <span key={space.index} style={{ "--district-color": space.districtColor } as CSSProperties}><i style={{ backgroundImage: `url(${space.asset})` }} /><b>{space.name}</b></span> : null; })}</div>
+      <div className="trade-offer-deeds">{spaceIndexes.map((spaceIndex) => { const space = SPACE_BY_INDEX.get(spaceIndex); return space ? <span key={space.index} style={{ "--district-color": space.districtColor } as CSSProperties}><i style={{ backgroundImage: `url(${space.asset})` }} /><DistrictMark district={space.district} /><b>{space.name}</b></span> : null; })}</div>
       {spaceIndexes.length === 0 && <div className="trade-cash-only"><Coins /> {money(cash)} cash</div>}
     </section>
   );
@@ -722,7 +750,7 @@ function LandmarkStealModal({ state, youId, onAction, busy }: { state: FortuneGa
               return (
                 <button key={space.index} type="button" disabled={!isChooser || busy} style={{ "--district-color": space.districtColor } as CSSProperties} onClick={() => onAction({ type: "steal-landmark", spaceIndex: space.index })}>
                   <span className="steal-target-art" style={{ backgroundImage: `url(${space.asset})` }} />
-                  <span><small>{space.districtName}</small><strong>{space.name}</strong><em>Pay {owner.name} {money(paid)}</em></span>
+                  <span><DistrictMark district={space.district} showName /><strong>{space.name}</strong><em>Pay {owner.name} {money(paid)}</em></span>
                   <PawnPortrait pawn={pawnBySlug(owner.pawnSlug)} />
                 </button>
               );
@@ -798,13 +826,13 @@ function CardChoiceModal({ state, youId, onAction, busy }: { state: FortuneGameS
             {choice.options.includes("reverse-next") && <button type="button" disabled={!isChooser || busy} onClick={() => choose("reverse-next")}><span className="choice-medallion"><ArrowLeftRight /></span><span><small>Inspector correction</small><strong>Clear reverse route</strong><em>Your next roll moves clockwise</em></span></button>}
             {choice.eligibleDistricts.map((district) => {
               const districtSpaces = SPACES.filter((space) => space.district === district);
-              return <button className="district-choice" key={district} type="button" disabled={!isChooser || busy} style={{ "--district-color": districtSpaces[0]?.districtColor ?? "#d8b24f" } as CSSProperties} onClick={() => choose(`district:${district}`)}><span className="district-choice-art">{districtSpaces.map((space) => <i key={space.index} style={{ backgroundImage: `url(${space.asset})` }} />)}</span><span><small>District {district + 1}</small><strong>{DISTRICTS[district]}</strong><em>{districtSpaces.map((space) => space.name).join(" • ")}</em></span></button>;
+              return <button className="district-choice" key={district} type="button" disabled={!isChooser || busy} style={{ "--district-color": districtSpaces[0]?.districtColor ?? "#d8b24f" } as CSSProperties} onClick={() => choose(`district:${district}`)}><span className="district-choice-art">{districtSpaces.map((space) => <i key={space.index} style={{ backgroundImage: `url(${space.asset})` }} />)}</span><span><DistrictMark district={district} /><strong>{DISTRICTS[district]}</strong><em>{districtSpaces.map((space) => space.name).join(" • ")}</em></span></button>;
             })}
             {choice.eligiblePlayerIds.map((playerId) => {
               const target = state.players.find((player) => player.id === playerId);
               return target ? <button className="player-choice" key={target.id} type="button" disabled={!isChooser || busy} onClick={() => choose(`player:${target.id}`)}><PawnPortrait pawn={pawnBySlug(target.pawnSlug)} /><span><small>Space {target.position} • {money(target.cash)}</small><strong>Swap with {target.name}</strong><em>They collect F20</em></span></button> : null;
             })}
-            {spaces.map(({ space, property, owner }) => <button className="space-choice" key={space.index} type="button" disabled={!isChooser || busy} style={{ "--district-color": space.districtColor } as CSSProperties} onClick={() => choose(`space:${space.index}`)}><span className="choice-space-art" style={{ backgroundImage: `url(${space.asset})` }} /> <span><small>{space.districtName ?? space.kind}{owner ? ` • ${owner.name}` : " • Available"}</small><strong>{space.name}</strong><em>{spaceAction(space, property)}</em></span>{owner ? <PawnPortrait pawn={pawnBySlug(owner.pawnSlug)} /> : <span className="choice-space-price">{money(space.price)}</span>}</button>)}
+            {spaces.map(({ space, property, owner }) => <button className="space-choice" key={space.index} type="button" disabled={!isChooser || busy} style={{ "--district-color": space.districtColor } as CSSProperties} onClick={() => choose(`space:${space.index}`)}><span className="choice-space-art" style={{ backgroundImage: `url(${space.asset})` }} /> <span><DistrictMark district={space.district} showName /><small>{owner ? owner.name : "Available"}</small><strong>{space.name}</strong><em>{spaceAction(space, property)}</em></span>{owner ? <PawnPortrait pawn={pawnBySlug(owner.pawnSlug)} /> : <span className="choice-space-price">{money(space.price)}</span>}</button>)}
           </div>
           <div className="steal-instruction"><i /> {isChooser ? "Tap one option to finish the card" : `Waiting for ${chooser?.name ?? "the player"}`}</div>
         </div>
@@ -955,10 +983,10 @@ function DeedManager({
         {deeds.length === 0 ? <div className="deed-manager-empty"><Landmark /><strong>No deeds in this portfolio yet.</strong><p>Available landmarks are still waiting around the board.</p></div> : (
           <div className="deed-manager-layout">
             <nav className="deed-manager-list" aria-label="Choose a deed to manage">
-              {deeds.map((entry) => <button type="button" key={entry.space.index} className={`${entry.space.index === selected?.space.index ? "is-selected" : ""} ${entry.property.mortgaged ? "is-mortgaged" : ""}`} style={{ "--district-color": entry.space.districtColor } as CSSProperties} onClick={() => setSelectedIndex(entry.space.index)}><span style={{ backgroundImage: `url(${entry.space.asset})` }} /><div><strong>{entry.space.name}</strong><small>{entry.property.mortgaged ? "Mortgaged • fee paused" : entry.property.upgrades === 3 ? "Castle built" : entry.property.upgrades ? `${entry.property.upgrades} ${entry.property.upgrades === 1 ? "crown" : "crowns"}` : money(entry.space.price)}</small></div><i>{entry.property.mortgaged ? <Banknote /> : entry.property.upgrades === 3 ? <Castle /> : <Landmark />}</i></button>)}
+              {deeds.map((entry) => <button type="button" key={entry.space.index} className={`${entry.space.index === selected?.space.index ? "is-selected" : ""} ${entry.property.mortgaged ? "is-mortgaged" : ""}`} style={{ "--district-color": entry.space.districtColor } as CSSProperties} onClick={() => setSelectedIndex(entry.space.index)}><span style={{ backgroundImage: `url(${entry.space.asset})` }} /><div><DistrictMark district={entry.space.district} /><strong>{entry.space.name}</strong><small>{entry.property.mortgaged ? "Mortgaged • fee paused" : entry.property.upgrades === 3 ? "Castle built" : entry.property.upgrades ? `${entry.property.upgrades} ${entry.property.upgrades === 1 ? "crown" : "crowns"}` : money(entry.space.price)}</small></div><i>{entry.property.mortgaged ? <Banknote /> : entry.property.upgrades === 3 ? <Castle /> : <Landmark />}</i></button>)}
             </nav>
             {property && space && <article className="deed-manager-detail" style={{ "--district-color": space.districtColor } as CSSProperties}>
-              <div className="deed-manager-art" style={{ backgroundImage: `url(${space.asset})` }}><span>{space.districtName ?? (space.kind === "transport" ? "Transportation" : "Avenue service")}</span>{property.mortgaged && <b><Banknote /> Mortgaged</b>}</div>
+              <div className="deed-manager-art" style={{ backgroundImage: `url(${space.asset})` }}>{space.district !== null ? <DistrictMark district={space.district} showName className="deed-manager-district" /> : <span>{space.kind === "transport" ? "Transportation" : "Avenue service"}</span>}{property.mortgaged && <b><Banknote /> Mortgaged</b>}</div>
               <div className="deed-manager-copy">
                 <span className="deed-manager-kicker">Space {space.index} • Owned by {player?.name}</span>
                 <h3>{space.name}</h3>
@@ -1066,6 +1094,34 @@ function PlayerRail({ state, youId }: { state: FortuneGameState; youId: string }
   );
 }
 
+function DistrictCollectionTracker({ state, playerId }: { state: FortuneGameState; playerId: string }) {
+  return (
+    <div className="collection-map">
+      <div className="collection-map-heading"><span>District sets</span><small>Match the D-number + symbol</small></div>
+      <div className="collection-tracker">
+        {DISTRICT_DETAILS.map((detail, district) => {
+          const districtSpaces = SPACES.filter((space) => space.district === district);
+          const ownedCount = districtSpaces.filter((space) => state.properties[String(space.index)]?.ownerId === playerId).length;
+          const remaining = districtSpaces.length - ownedCount;
+          return (
+            <article
+              key={detail.code}
+              className={`collection-set ${remaining === 0 ? "is-complete" : ""}`}
+              data-district={district}
+              style={{ "--district-color": detail.color } as CSSProperties}
+              aria-label={`${detail.code} ${detail.name}: ${ownedCount} of ${districtSpaces.length} owned${remaining === 0 ? ", complete" : `, need ${remaining}`}`}
+              title={`${detail.code} • ${detail.name}`}
+            >
+              <DistrictMark district={district} />
+              <span className="collection-set-status"><b>{ownedCount}/{districtSpaces.length}</b><small>{remaining === 0 ? "Complete" : `Need ${remaining}`}</small></span>
+            </article>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function DeedPanel({ state, playerId, onManage, busy, title = "Your portfolio" }: { state: FortuneGameState; playerId: string; onManage: (spaceIndex?: number) => void; busy: boolean; title?: string }) {
   const deeds = ownedProperties(state, playerId).flatMap((property) => {
     const space = SPACE_BY_INDEX.get(property.spaceIndex);
@@ -1074,11 +1130,12 @@ function DeedPanel({ state, playerId, onManage, busy, title = "Your portfolio" }
   return (
     <section className="deed-panel">
       <div className="panel-heading"><span>{title}</span><b>{deeds.length} deeds</b><button type="button" disabled={busy} onClick={() => onManage()}><WalletCards /> Manage</button></div>
+      <DistrictCollectionTracker state={state} playerId={playerId} />
       {deeds.length === 0 ? <div className="empty-deeds">Your first ridiculous landmark is still waiting.</div> : (
         <div className="deed-list">{deeds.map(({ property, space }) => {
           const hasDistrict = ownsFullDistrict(state, playerId, space.district);
           const nextFee = propertyPostedRent(state, { ...property, upgrades: Math.min(3, property.upgrades + 1) }, 7);
-          return <article className={`deed-row ${hasDistrict ? "has-district" : ""} ${property.mortgaged ? "is-mortgaged" : ""}`} key={space.index} style={{ "--district-color": space.districtColor } as CSSProperties}><span className="deed-art" style={{ backgroundImage: `url(${space.asset})` }} /><div><strong>{space.name}</strong><span className="deed-builds" aria-label={property.mortgaged ? "Mortgaged deed" : property.upgrades === 3 ? "Castle built" : `${property.upgrades} crowns`}>{property.mortgaged ? <Banknote /> : property.upgrades === 3 ? <Castle /> : Array.from({ length: property.upgrades }, (_, index) => <Crown key={index} />)}</span><small>{property.mortgaged ? `Mortgaged for ${money(mortgageValue(space))} • entry fee paused` : property.upgrades === 3 ? propertyFeeCopy(state, property, "Castle fee") : hasDistrict ? `${property.upgrades === 0 ? "District complete" : `${property.upgrades} ${property.upgrades === 1 ? "crown" : "crowns"}`} • next fee ${money(nextFee)}` : space.kind === "landmark" ? `Complete ${space.districtName} to add crowns` : propertyFeeCopy(state, property, "Entry fee")}</small></div><button type="button" disabled={busy} onClick={() => onManage(space.index)}>Manage</button></article>;
+          return <article className={`deed-row ${hasDistrict ? "has-district" : ""} ${property.mortgaged ? "is-mortgaged" : ""}`} key={space.index} style={{ "--district-color": space.districtColor } as CSSProperties}><span className="deed-art" style={{ backgroundImage: `url(${space.asset})` }} /><div><DistrictMark district={space.district} /><strong>{space.name}</strong><span className="deed-builds" aria-label={property.mortgaged ? "Mortgaged deed" : property.upgrades === 3 ? "Castle built" : `${property.upgrades} crowns`}>{property.mortgaged ? <Banknote /> : property.upgrades === 3 ? <Castle /> : Array.from({ length: property.upgrades }, (_, index) => <Crown key={index} />)}</span><small>{property.mortgaged ? `Mortgaged for ${money(mortgageValue(space))} • entry fee paused` : property.upgrades === 3 ? propertyFeeCopy(state, property, "Castle fee") : hasDistrict ? `${property.upgrades === 0 ? "District complete" : `${property.upgrades} ${property.upgrades === 1 ? "crown" : "crowns"}`} • next fee ${money(nextFee)}` : space.kind === "landmark" ? `Complete ${space.districtName} to add crowns` : propertyFeeCopy(state, property, "Entry fee")}</small></div><button type="button" disabled={busy} onClick={() => onManage(space.index)}>Manage</button></article>;
         })}</div>
       )}
     </section>
@@ -1105,7 +1162,7 @@ function SpaceInspector({ space, state, onClose }: { space: SpaceDefinition; sta
       <section className="space-inspector" role="dialog" aria-modal="true" aria-labelledby="space-title" onMouseDown={(event) => event.stopPropagation()}>
         <button className="modal-close" type="button" onClick={onClose} aria-label="Close landmark details">×</button><div className="inspector-art" style={{ backgroundImage: `url(${space.asset})` }} /><div className="inspector-copy"><span className="inspector-kicker">Space {space.index} • {space.districtName ?? space.kind}</span><h2 id="space-title">{space.name}</h2>
           {space.price > 0 ? <div className="inspector-stats"><span><small>{property ? "Estate value" : "Deed"}</small><strong>{money(property?.mortgaged ? mortgageValue(space) : space.price + (property?.upgrades ?? 0) * space.upgradeCost)}</strong></span><span className={feeStatus ? "has-fee-status" : ""}><small>Posted entry fee</small><strong>{space.kind === "service" ? "Dice based" : money(postedFee)}</strong>{feeStatus && <em>{feeStatus}</em>}</span><span><small>Owner</small><strong>{owner?.name ?? "Available"}</strong></span><span><small>Build</small><strong>{property?.mortgaged ? "Mortgaged" : property?.upgrades === 3 ? "Castle" : property?.upgrades ? `${property.upgrades} ${property.upgrades === 1 ? "crown" : "crowns"}` : "No crowns"}</strong></span></div> : <p className="inspector-effect">{space.kind === "lucky" ? "Draw a Lucky Break and let fortune show off." : space.kind === "plot" ? "Draw a Plot Twist and brace for nonsense." : space.index === 20 ? "Pay F60 in mysterious municipal fees." : space.index === 30 ? "Collect F90 from the festival crowd." : space.index === 10 ? "Usually just visiting—unless a card strands you here." : "Collect F200 whenever you pass this gold marquee."}</p>}
-          {space.district !== null && <span className="district-tag" style={{ backgroundColor: space.districtColor }}>{DISTRICTS[space.district]}</span>}
+          <DistrictMark district={space.district} showName className="district-tag" />
         </div>
       </section>
     </div>

@@ -1208,6 +1208,47 @@ button:disabled {
   opacity: 0.2;
 }
 
+[data-district="0"] { --district-pattern: repeating-linear-gradient(135deg, var(--district-color) 0 3px, #170f28 3px 6px); }
+[data-district="1"] { --district-pattern: radial-gradient(circle at 3px 3px, var(--district-color) 0 1.6px, #05201e 1.8px) 0 0 / 6px 6px; }
+[data-district="2"] { --district-pattern: repeating-linear-gradient(90deg, var(--district-color) 0 2px, #2b0710 2px 5px); }
+[data-district="3"] { --district-pattern: repeating-linear-gradient(0deg, var(--district-color) 0 2px, #291303 2px 5px); }
+[data-district="4"] { --district-pattern: repeating-linear-gradient(45deg, transparent 0 3px, var(--district-color) 3px 4px), repeating-linear-gradient(-45deg, #28051f 0 3px, var(--district-color) 3px 4px); }
+[data-district="5"] { --district-pattern: conic-gradient(var(--district-color) 25%, #172105 0 50%, var(--district-color) 0 75%, #172105 0) 0 0 / 6px 6px; }
+
+.district-mark {
+  --district-color: var(--gold);
+  --district-pattern: linear-gradient(var(--district-color), var(--district-color));
+  width: fit-content;
+  max-width: 100%;
+  min-height: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.24rem;
+  overflow: hidden;
+  padding: 0.16rem 0.36rem 0.16rem 0.2rem;
+  border: 1px solid color-mix(in srgb, var(--district-color) 72%, #ffffff);
+  border-radius: 6px;
+  background: rgba(3, 10, 8, 0.94);
+  box-shadow: inset 0 0 12px color-mix(in srgb, var(--district-color) 9%, transparent), 0 0 9px color-mix(in srgb, var(--district-color) 10%, transparent);
+  color: #f4ecd6;
+  font-family: var(--sans);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.district-mark::before {
+  width: 5px;
+  align-self: stretch;
+  flex: 0 0 auto;
+  border-radius: 3px;
+  background: var(--district-pattern);
+  content: "";
+}
+
+.district-mark-symbol { color: var(--district-color); font-size: 0.66rem; filter: drop-shadow(0 0 4px color-mix(in srgb, var(--district-color) 45%, transparent)); }
+.district-mark-code { color: #fff5d9; font-size: 0.47rem; font-weight: 950; letter-spacing: 0.07em; }
+.district-mark-name { overflow: hidden; color: #b9b4a6; font-size: 0.43rem; font-weight: 850; letter-spacing: 0.035em; text-overflow: ellipsis; text-transform: uppercase; }
+
 .game-board {
   width: 100%;
   height: 100%;
@@ -1222,6 +1263,7 @@ button:disabled {
 
 .board-space {
   --district-color: var(--gold);
+  --district-pattern: linear-gradient(var(--district-color), var(--district-color));
   --owner-color: transparent;
   position: relative;
   min-width: 0;
@@ -1237,6 +1279,35 @@ button:disabled {
   background: #111713;
   text-align: center;
 }
+
+.board-space.space-landmark::before {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: 3;
+  height: 4px;
+  background: var(--district-pattern);
+  content: "";
+  pointer-events: none;
+}
+
+.board-district-mark {
+  position: absolute;
+  bottom: 20px;
+  left: 2px;
+  z-index: 6;
+  min-height: 0;
+  gap: 1px;
+  padding: 1px 3px 1px 1px;
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+.board-district-mark::before { width: 3px; min-height: 8px; }
+.board-district-mark .district-mark-symbol { font-size: clamp(4px, 0.5vw, 8px); }
+.board-district-mark .district-mark-code { font-size: clamp(4px, 0.44vw, 7px); letter-spacing: 0; }
+.board-district-mark .district-mark-name { display: none; }
 
 .board-space:hover,
 .board-space:focus-visible {
@@ -1845,8 +1916,10 @@ button.board-dice-control.can-roll:focus-visible { outline: 2px solid #fff1b0; o
 .skip-auction-action { background: linear-gradient(145deg, rgba(83, 91, 86, 0.72), rgba(34, 41, 37, 0.9)); color: #d5d7cf; }
 .lucky-action { color: var(--gold-bright); }
 .purchase-prompt { display: grid; gap: 0.25rem; text-align: center; }
+.purchase-district-mark { justify-self: center; }
 .purchase-prompt strong { color: #f7e8bd; font-family: var(--display); font-size: clamp(0.6rem, 1vw, 0.82rem); }
-.purchase-prompt > span { color: var(--gold-bright); font-size: clamp(0.42rem, 0.7vw, 0.6rem); }
+.purchase-set-progress { color: #c8b983; font-size: clamp(0.4rem, 0.65vw, 0.55rem); font-weight: 850; }
+.purchase-prompt > span:not(.district-mark) { color: var(--gold-bright); font-size: clamp(0.42rem, 0.7vw, 0.6rem); }
 .purchase-prompt > div { display: grid; grid-template-columns: 1fr 0.78fr 0.9fr; gap: 0.3rem; }
 .waiting-turn,
 .winner-mini { grid-column: 1 / -1; color: #929991; font-size: clamp(0.42rem, 0.7vw, 0.6rem); text-align: center; }
@@ -1884,6 +1957,31 @@ button.board-dice-control.can-roll:focus-visible { outline: 2px solid #fff1b0; o
   font-weight: 900;
 }
 .panel-heading b { color: var(--gold); font-family: var(--sans); font-size: 0.58rem; letter-spacing: 0.08em; text-transform: uppercase; }
+.collection-map { flex: 0 0 auto; padding: 0.42rem 0.55rem 0.5rem; border-bottom: 1px solid rgba(255, 255, 255, 0.06); background: rgba(0, 0, 0, 0.15); }
+.collection-map-heading { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.35rem; }
+.collection-map-heading span { color: #e8d6a8; font-size: 0.5rem; font-weight: 950; letter-spacing: 0.12em; text-transform: uppercase; }
+.collection-map-heading small { color: #8f978f; font-size: 0.43rem; font-weight: 800; }
+.collection-tracker { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.28rem; }
+.collection-set {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.28rem;
+  padding: 0.28rem;
+  border: 1px solid color-mix(in srgb, var(--district-color) 34%, rgba(255, 255, 255, 0.08));
+  border-radius: 8px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--district-color) 10%, transparent), rgba(255, 255, 255, 0.018));
+}
+.collection-set.is-complete { border-color: color-mix(in srgb, var(--district-color) 82%, white); box-shadow: inset 0 0 14px color-mix(in srgb, var(--district-color) 12%, transparent); }
+.collection-set .district-mark { min-height: 15px; gap: 0.12rem; padding: 0.1rem 0.2rem 0.1rem 0.12rem; }
+.collection-set .district-mark::before { width: 3px; }
+.collection-set .district-mark-symbol { font-size: 0.5rem; }
+.collection-set .district-mark-code { font-size: 0.39rem; }
+.collection-set-status { min-width: 0; display: grid; }
+.collection-set-status b { color: #f6e8c3; font-size: 0.48rem; line-height: 1; }
+.collection-set-status small { overflow: hidden; color: #8c948d; font-size: 0.36rem; font-weight: 850; line-height: 1.2; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
+.collection-set.is-complete .collection-set-status small { color: var(--district-color); }
 .empty-deeds { margin: auto; max-width: 220px; padding: 1rem; color: #7f8780; font-size: 0.72rem; line-height: 1.5; text-align: center; }
 .deed-list,
 .event-scroll { min-height: 0; overflow-y: auto; }
@@ -1891,6 +1989,10 @@ button.board-dice-control.can-roll:focus-visible { outline: 2px solid #fff1b0; o
 .deed-row.has-district { background: linear-gradient(90deg, color-mix(in srgb, var(--district-color) 10%, transparent), transparent 58%); }
 .deed-art { width: 42px; height: 42px; border-radius: 8px; background-position: center; background-size: cover; }
 .deed-row > div { min-width: 0; display: grid; gap: 0.15rem; }
+.deed-row .district-mark { min-height: 16px; gap: 0.16rem; padding: 0.1rem 0.25rem 0.1rem 0.14rem; }
+.deed-row .district-mark::before { width: 3px; }
+.deed-row .district-mark-symbol { font-size: 0.52rem; }
+.deed-row .district-mark-code { font-size: 0.4rem; }
 .deed-row strong { overflow: hidden; color: #e7ddc0; font-family: var(--display); font-size: 0.76rem; text-overflow: ellipsis; white-space: nowrap; }
 .deed-row small { color: #8f9991; font-size: 0.53rem; line-height: 1.35; overflow-wrap: anywhere; }
 .deed-builds { min-height: 11px; display: flex; align-items: center; gap: 2px; color: #f1c95f; }
@@ -2012,7 +2114,8 @@ button.board-dice-control.can-roll:focus-visible { outline: 2px solid #fff1b0; o
 .auction-copy { display: flex; flex-direction: column; justify-content: center; padding: clamp(1.3rem, 4vw, 2.5rem); }
 .auction-kicker,
 .cash-kicker { color: #e5bb54; font-size: 0.66rem; font-weight: 900; letter-spacing: 0.17em; text-transform: uppercase; }
-.auction-copy h2 { margin: 0.35rem 0 1.2rem; color: #ffe7a3; font-family: var(--display); font-size: clamp(2.1rem, 5vw, 4.2rem); line-height: 0.9; }
+.auction-copy h2 { margin: 0.35rem 0 0.5rem; color: #ffe7a3; font-family: var(--display); font-size: clamp(2.1rem, 5vw, 4.2rem); line-height: 0.9; }
+.auction-district-mark { margin-bottom: 0.75rem; }
 .auction-price { display: grid; gap: 0.2rem; padding: 0.9rem 1rem; border: 1px solid rgba(226, 184, 78, 0.3); border-radius: 13px; background: rgba(0, 0, 0, 0.23); }
 .auction-price small { color: #8f9991; font-size: 0.58rem; font-weight: 900; letter-spacing: 0.12em; text-transform: uppercase; }
 .auction-price strong { color: #f6ce65; font-family: var(--display); font-size: 1.55rem; }
@@ -2105,6 +2208,18 @@ button.board-dice-control.can-roll:focus-visible { outline: 2px solid #fff1b0; o
 .trade-deed-picker > button.is-locked { cursor: not-allowed; filter: grayscale(0.65); opacity: 0.46; }
 .trade-deed-art { width: 44px; height: 38px; border-radius: 7px; background-position: center; background-size: cover; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12); }
 .trade-deed-picker button > span:nth-child(2) { min-width: 0; display: grid; gap: 0.12rem; }
+.trade-deed-picker .district-mark,
+.trade-offer-deeds .district-mark,
+.deed-manager-list .district-mark { min-height: 15px; gap: 0.12rem; padding: 0.1rem 0.22rem 0.1rem 0.12rem; }
+.trade-deed-picker .district-mark::before,
+.trade-offer-deeds .district-mark::before,
+.deed-manager-list .district-mark::before { width: 3px; }
+.trade-deed-picker .district-mark-symbol,
+.trade-offer-deeds .district-mark-symbol,
+.deed-manager-list .district-mark-symbol { font-size: 0.5rem; }
+.trade-deed-picker .district-mark-code,
+.trade-offer-deeds .district-mark-code,
+.deed-manager-list .district-mark-code { font-size: 0.38rem; }
 .trade-deed-picker strong { overflow: hidden; font-family: var(--display); font-size: 0.72rem; text-overflow: ellipsis; white-space: nowrap; }
 .trade-deed-picker small { color: #7d8780; font-size: 0.5rem; }
 .trade-deed-picker button > i { width: 22px; height: 22px; display: grid; place-items: center; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 50%; color: #07100d; background: rgba(255, 255, 255, 0.035); }
@@ -2143,7 +2258,7 @@ button.board-dice-control.can-roll:focus-visible { outline: 2px solid #fff1b0; o
 .trade-offer-bundle small { color: #808a83; font-size: 0.5rem; font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase; }
 .trade-offer-bundle strong { overflow: hidden; color: #eaddbb; font-family: var(--display); font-size: 0.78rem; text-overflow: ellipsis; white-space: nowrap; }
 .trade-offer-deeds { display: grid; gap: 0.3rem; margin-top: 0.55rem; }
-.trade-offer-deeds > span { --district-color: #d8b24f; min-width: 0; display: grid; grid-template-columns: 40px minmax(0, 1fr); align-items: center; gap: 0.4rem; overflow: hidden; border-left: 3px solid var(--district-color); border-radius: 7px; background: rgba(255, 255, 255, 0.035); }
+.trade-offer-deeds > span { --district-color: #d8b24f; min-width: 0; display: grid; grid-template-columns: 40px auto minmax(0, 1fr); align-items: center; gap: 0.35rem; overflow: hidden; border-left: 3px solid var(--district-color); border-radius: 7px; background: rgba(255, 255, 255, 0.035); }
 .trade-offer-deeds i { width: 40px; height: 35px; background-position: center; background-size: cover; }
 .trade-offer-deeds b { overflow: hidden; padding-right: 0.35rem; color: #cfcec3; font-family: var(--display); font-size: 0.64rem; text-overflow: ellipsis; white-space: nowrap; }
 .trade-cash-only { min-height: 62px; justify-content: center; color: #f1d176; font-family: var(--display); }
@@ -2199,6 +2314,16 @@ button.board-dice-control.can-roll:focus-visible { outline: 2px solid #fff1b0; o
 .steal-targets > button:disabled { cursor: wait; opacity: 0.62; }
 .steal-target-art { width: 76px; height: 58px; border-radius: 8px; background-position: center; background-size: cover; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14); }
 .steal-targets button > span:nth-child(2) { min-width: 0; display: grid; gap: 0.08rem; }
+.steal-targets .district-mark,
+.card-choice-options .district-mark { min-height: 17px; gap: 0.18rem; padding: 0.1rem 0.28rem 0.1rem 0.14rem; }
+.steal-targets .district-mark::before,
+.card-choice-options .district-mark::before { width: 3px; }
+.steal-targets .district-mark-symbol,
+.card-choice-options .district-mark-symbol { font-size: 0.54rem; }
+.steal-targets .district-mark-code,
+.card-choice-options .district-mark-code { font-size: 0.4rem; }
+.steal-targets .district-mark-name,
+.card-choice-options .district-mark-name { font-size: 0.39rem; }
 .steal-targets small { overflow: hidden; color: #a79a81; font-size: 0.48rem; font-weight: 900; letter-spacing: 0.07em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
 .steal-targets strong { overflow: hidden; color: #f2e5c2; font-family: var(--display); font-size: 0.9rem; text-overflow: ellipsis; white-space: nowrap; }
 .steal-targets em { color: #e7bf60; font-size: 0.58rem; font-style: normal; font-weight: 800; }
@@ -3158,6 +3283,10 @@ button.board-dice-control.can-roll:focus-visible { outline: 2px solid #fff1b0; o
   .space-name { min-height: 15px; padding-inline: 0; font-size: clamp(3.7px, 1.32vw, 6.5px); line-height: 0.9; }
   .space-name.is-tight { font-size: clamp(3.1px, 0.98vw, 5.4px); }
   .space-number { font-size: 4px; }
+  .board-district-mark { bottom: 16px; left: 1px; padding: 1px 2px 1px 1px; }
+  .board-district-mark::before { width: 2px; min-height: 6px; }
+  .board-district-mark .district-mark-symbol { font-size: 4px; }
+  .board-district-mark .district-mark-code { font-size: 3.8px; }
   .board-token { width: clamp(10px, 3.5vw, 18px); height: clamp(10px, 3.5vw, 18px); border-width: 1px; border-radius: 5px; }
   .movement-banner { top: 1.5%; max-width: 92%; gap: 0.35rem; padding: 0.28rem 0.48rem 0.28rem 0.3rem; }
   .movement-banner .pawn-portrait-art { width: 25px; height: 25px; border-radius: 7px; }
@@ -3167,6 +3296,12 @@ button.board-dice-control.can-roll:focus-visible { outline: 2px solid #fff1b0; o
   .spendable-balance > svg { width: 12px; height: 12px; }
   .spendable-balance small { font-size: 0.34rem; }
   .spendable-balance strong { font-size: 0.62rem; }
+  .purchase-district-mark { min-height: 14px; gap: 0.12rem; padding: 0.08rem 0.2rem 0.08rem 0.1rem; }
+  .purchase-district-mark::before { width: 3px; }
+  .purchase-district-mark .district-mark-symbol { font-size: 0.48rem; }
+  .purchase-district-mark .district-mark-code { font-size: 0.36rem; }
+  .purchase-district-mark .district-mark-name { max-width: 72px; font-size: 0.32rem; }
+  .purchase-set-progress { font-size: 0.36rem; }
   .board-center-brand { top: 5%; font-size: clamp(1rem, 7vw, 2rem); }
   .match-status { top: 16.2%; min-width: 94px; padding: 0.2rem 0.4rem; }
   .match-status small { display: none; }
@@ -3182,6 +3317,8 @@ button.board-dice-control.can-roll:focus-visible { outline: 2px solid #fff1b0; o
   .motion-permission-button { min-height: 30px; padding: 0.38rem 0.58rem; font-size: clamp(6px, 1.75vw, 8px); }
   .motion-unavailable { max-width: 132px; font-size: clamp(5px, 1.5vw, 6.5px); }
   .game-sidebar { grid-template-columns: 1fr; grid-template-rows: minmax(240px, auto) 320px; }
+  .collection-map { padding: 0.38rem 0.45rem 0.44rem; }
+  .collection-tracker { gap: 0.22rem; }
   .rules-card { padding: 1.3rem 1rem; border-radius: 18px; }
   .rules-grid { grid-template-columns: 1fr; }
   .rules-grid article { min-height: 0; }
