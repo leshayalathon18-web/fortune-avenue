@@ -20,7 +20,7 @@ and phone motion permissions available. A same-window link is included as a
 fallback.
 
 Live game:
-https://fortune-avenue-live.spotifyps5email.chatgpt.site
+https://fortune-avenue-release-15.jaytonmack111.chatgpt.site
 
 GitHub source:
 https://github.com/leshayalathon18-web/fortune-avenue
