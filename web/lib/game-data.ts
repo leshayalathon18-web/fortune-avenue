@@ -3,10 +3,53 @@ import rawPawnData from "@/game-data/pawns.json";
 import type {
   CardDefinition,
   CardDeck,
+  MatchMode,
   PawnDefinition,
   SpaceDefinition,
   SpaceKind,
 } from "./game-types";
+
+export const MATCH_MODES: Record<MatchMode, {
+  name: string;
+  shortName: string;
+  description: string;
+  startCash: number;
+  passBonus: number;
+  targetNetWorth: number;
+  requiredProperties: number;
+  maxTurns: number;
+}> = {
+  classic: {
+    name: "Classic Long Game",
+    shortName: "Classic",
+    description: "The full empire-building night: eight deeds, F5,000 fortune, or 180 turns.",
+    startCash: 1400,
+    passBonus: 200,
+    targetNetWorth: 5000,
+    requiredProperties: 8,
+    maxTurns: 180,
+  },
+  party: {
+    name: "Party Game",
+    shortName: "Party",
+    description: "A quicker, louder match with six deeds, F3,500 fortune, and a 90-turn closing bell.",
+    startCash: 1200,
+    passBonus: 200,
+    targetNetWorth: 3500,
+    requiredProperties: 6,
+    maxTurns: 90,
+  },
+  "grand-finale": {
+    name: "Grand Finale",
+    shortName: "Finale",
+    description: "No early fortune win. Build until turn 140, then the richest empire takes the crown.",
+    startCash: 1400,
+    passBonus: 225,
+    targetNetWorth: Number.MAX_SAFE_INTEGER,
+    requiredProperties: 40,
+    maxTurns: 140,
+  },
+};
 
 const DISTRICT_NAMES = [
   "Strange Beginnings",

@@ -1,4 +1,4 @@
-import { ensureRoomSchema, loadRoom, verifySession } from "@/lib/room-storage";
+import { ensureRoomSchema, loadRoom, loadSession } from "@/lib/room-storage";
 
 export const dynamic = "force-dynamic";
 
@@ -12,10 +12,14 @@ export async function GET(request: Request, context: { params: Promise<{ code: s
     const url = new URL(request.url);
     const playerId = url.searchParams.get("playerId") ?? "";
     const token = url.searchParams.get("token") ?? "";
-    const authenticated = await verifySession(code, playerId, token);
+    const session = await loadSession(code, playerId, token);
     return Response.json({
       state,
-      you: authenticated ? { playerId, isHost: state.hostPlayerId === playerId } : null,
+      you: session ? {
+        playerId,
+        isHost: session.role === "player" && state.hostPlayerId === playerId,
+        isSpectator: session.role === "spectator",
+      } : null,
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not open the room.";

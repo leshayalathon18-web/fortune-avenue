@@ -6,12 +6,16 @@ import type {
   BoardTheme,
   FortuneGameState,
   GameEvent,
+  MatchMode,
+  PlayerProfile,
+  ProfileCredentials,
   RoomAction,
   RoomCredentials,
   RoomPayload,
   SpaceDefinition,
 } from "@/lib/game-types";
 import { CardReveal, CashCollection, GameScreen } from "./ui/game-table";
+import { ProfilePanel, TutorialOverlay } from "./ui/player-experience";
 import {
   HomeScreen,
   LoadingScreen,
@@ -28,10 +32,19 @@ interface RoomApiResponse extends RoomPayload {
   error?: string;
 }
 
+interface ProfileApiResponse {
+  profile?: PlayerProfile;
+  credentials?: ProfileCredentials;
+  error?: string;
+}
+
 const SESSION_PREFIX = "fortune-avenue:session:";
 const LAST_ROOM_KEY = "fortune-avenue:last-room";
 const NAME_KEY = "fortune-avenue:player-name";
 const MUTED_KEY = "fortune-avenue:muted";
+const HAPTICS_KEY = "fortune-avenue:haptics";
+const PROFILE_KEY = "fortune-avenue:profile";
+const TUTORIAL_KEY = "fortune-avenue:tutorial-complete";
 
 function sessionKey(code: string) {
   return `${SESSION_PREFIX}${code.toUpperCase()}`;
@@ -75,6 +88,15 @@ function readSession(code: string): RoomCredentials | null {
   }
 }
 
+function readProfileCredentials(): ProfileCredentials | null {
+  try {
+    const raw = storageGet(PROFILE_KEY);
+    return raw ? JSON.parse(raw) as ProfileCredentials : null;
+  } catch {
+    return null;
+  }
+}
+
 function roomUrl(code: string) {
   return `${window.location.origin}${window.location.pathname}?room=${code}`;
 }
@@ -93,17 +115,25 @@ export default function FortuneAvenueGame({
   const [playerName, setPlayerName] = useState("Avenue Legend");
   const [pawnSlug, setPawnSlug] = useState(PAWNS[8].slug);
   const [theme, setTheme] = useState<BoardTheme>("emerald");
+  const [matchMode, setMatchMode] = useState<MatchMode>("classic");
   const [playerCount, setPlayerCount] = useState(4);
   const [botCount, setBotCount] = useState(0);
+  const [joinAsSpectator, setJoinAsSpectator] = useState(false);
   const [joinCode, setJoinCode] = useState(sanitizedInitialRoom);
   const [recentRoom, setRecentRoom] = useState<string | null>(null);
   const [state, setState] = useState<FortuneGameState | null>(null);
   const [credentials, setCredentials] = useState<RoomCredentials | null>(null);
-  const [you, setYou] = useState<{ playerId: string; isHost: boolean } | null>(null);
+  const [you, setYou] = useState<{ playerId: string; isHost: boolean; isSpectator?: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [muted, setMuted] = useState(false);
+  const [haptics, setHaptics] = useState(true);
+  const [profileCredentials, setProfileCredentials] = useState<ProfileCredentials | null>(() => readProfileCredentials());
+  const [profile, setProfile] = useState<PlayerProfile | null>(null);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [tutorialOpen, setTutorialOpen] = useState(false);
   const [selectedSpace, setSelectedSpace] = useState<SpaceDefinition | null>(null);
   const [cardReveal, setCardReveal] = useState<GameEvent | null>(null);
   const [cardQueue, setCardQueue] = useState<GameEvent[]>([]);
@@ -116,11 +146,37 @@ export default function FortuneAvenueGame({
   const seenCardEvents = useRef(new Set<string>());
   const audioContext = useRef<AudioContext | null>(null);
   const initialRoomHandled = useRef(false);
+  const recordedProfileRoom = useRef<string | null>(null);
+  const initialProfileHandled = useRef(false);
 
   const showToast = useCallback((message: string) => {
     setToast(message);
     window.setTimeout(() => setToast(null), 2400);
   }, []);
+
+  const syncProfile = useCallback(async (displayName: string, selectedPawn: string) => {
+    setProfileLoading(true);
+    try {
+      const activeCredentials = profileCredentials ?? readProfileCredentials();
+      const response = await fetch("/api/profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ credentials: activeCredentials, displayName, pawnSlug: selectedPawn }),
+      });
+      const data = await response.json() as ProfileApiResponse;
+      if (!response.ok || !data.profile) throw new Error(data.error || "Your profile could not be refreshed.");
+      if (data.credentials) {
+        setProfileCredentials(data.credentials);
+        storageSet(PROFILE_KEY, JSON.stringify(data.credentials));
+      } else if (activeCredentials) {
+        setProfileCredentials(activeCredentials);
+      }
+      setProfile(data.profile);
+      return data.credentials ?? activeCredentials;
+    } finally {
+      setProfileLoading(false);
+    }
+  }, [profileCredentials]);
 
   const playSound = useCallback((event: GameEvent) => {
     if (muted) return;
@@ -128,28 +184,49 @@ export default function FortuneAvenueGame({
       const AudioCtor = window.AudioContext || (window as typeof window & { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       const context = audioContext.current ?? new AudioCtor();
       audioContext.current = context;
-      const gain = context.createGain();
-      gain.gain.setValueAtTime(0.0001, context.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.09, context.currentTime + 0.012);
-      gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.34);
-      gain.connect(context.destination);
-      const frequencies = event.type === "warning" ? [170, 125]
-        : event.type === "winner" ? [392, 523, 659]
+      void context.resume();
+      const master = context.createGain();
+      master.gain.value = 0.72;
+      master.connect(context.destination);
+      const now = context.currentTime;
+      const notes = event.type === "warning" ? [164, 123]
+        : event.type === "winner" ? [392, 523, 659, 784]
           : event.type === "card" ? [330, 440, 554]
-            : event.type === "purchase" || event.type === "fortune" ? [523, 659]
-              : [220, 277];
-      frequencies.forEach((frequency, index) => {
+            : event.type === "upgrade" ? [440, 554, 659, event.title.includes("Castle") ? 880 : 740]
+              : event.type === "rent" ? [659, 784, 988]
+                : event.type === "mortgage" ? [220, 277, event.title.includes("complete") ? 440 : 196]
+                  : event.type === "trade" || event.type === "auction" ? [262, 330, 392]
+                    : event.type === "purchase" || event.type === "fortune" ? [523, 659]
+                      : [220, 277];
+      notes.forEach((frequency, index) => {
+        const gain = context.createGain();
+        const start = now + index * (event.type === "winner" ? 0.09 : 0.055);
+        gain.gain.setValueAtTime(0.0001, start);
+        gain.gain.exponentialRampToValueAtTime(event.type === "warning" ? 0.055 : 0.075, start + 0.012);
+        gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.28);
+        gain.connect(master);
         const oscillator = context.createOscillator();
-        oscillator.type = event.type === "warning" ? "sawtooth" : "triangle";
+        oscillator.type = event.type === "warning" ? "sawtooth" : event.type === "rent" ? "sine" : "triangle";
         oscillator.frequency.value = frequency;
         oscillator.connect(gain);
-        oscillator.start(context.currentTime + index * 0.055);
-        oscillator.stop(context.currentTime + 0.28 + index * 0.055);
+        oscillator.start(start);
+        oscillator.stop(start + 0.3);
       });
     } catch {
       // Browsers may block audio until a later tap; gameplay continues silently.
     }
   }, [muted]);
+
+  const playHaptic = useCallback((event: GameEvent) => {
+    if (!haptics || !navigator.vibrate) return;
+    const pattern = event.type === "winner" ? [55, 35, 70, 35, 110]
+      : event.type === "warning" ? [75, 35, 75]
+        : event.type === "upgrade" ? [25, 20, 45, 20, 65]
+          : event.type === "rent" ? [22, 18, 22]
+            : event.type === "roll" ? [18, 16, 28]
+              : [20];
+    navigator.vibrate(pattern);
+  }, [haptics]);
 
   const acceptRoomResponse = useCallback((response: RoomApiResponse) => {
     setState(response.state);
@@ -159,7 +236,14 @@ export default function FortuneAvenueGame({
     }
     if (response.you) setYou(response.you);
     setTheme(response.state.theme);
+    setMatchMode(response.state.settings.matchMode);
     setScreen(response.state.phase === "lobby" ? "lobby" : "game");
+    if (
+      response.state.phase !== "lobby"
+      && response.you
+      && !response.you.isSpectator
+      && storageGet(TUTORIAL_KEY) !== "true"
+    ) setTutorialOpen(true);
     const url = new URL(window.location.href);
     url.searchParams.set("room", response.state.code);
     window.history.replaceState({}, "", url);
@@ -214,6 +298,7 @@ export default function FortuneAvenueGame({
       if (savedName) setPlayerName(savedName);
       if (savedRoom) setRecentRoom(savedRoom);
       setMuted(storageGet(MUTED_KEY) === "true");
+      setHaptics(storageGet(HAPTICS_KEY) !== "false");
       const currentUrl = new URL(window.location.href);
       const invitedCode = currentUrl.searchParams.get("room")?.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
       if (invitedCode) {
@@ -229,6 +314,15 @@ export default function FortuneAvenueGame({
   }, []);
 
   useEffect(() => {
+    if (initialProfileHandled.current) return;
+    initialProfileHandled.current = true;
+    const savedName = storageGet(NAME_KEY) || "Avenue Legend";
+    void syncProfile(savedName, pawnSlug).catch(() => {
+      // Gameplay remains available if a profile refresh is temporarily unavailable.
+    });
+  }, [pawnSlug, syncProfile]);
+
+  useEffect(() => {
     if (sanitizedInitialRoom.length !== 6 || initialRoomHandled.current) return;
     initialRoomHandled.current = true;
     void resumeCode(sanitizedInitialRoom);
@@ -238,7 +332,8 @@ export default function FortuneAvenueGame({
     if (!state?.lastEvent || state.lastEvent.id === seenEvent.current) return;
     seenEvent.current = state.lastEvent.id;
     playSound(state.lastEvent);
-  }, [playSound, state?.lastEvent]);
+    playHaptic(state.lastEvent);
+  }, [playHaptic, playSound, state?.lastEvent]);
 
   useEffect(() => {
     if (!state) return;
@@ -314,6 +409,17 @@ export default function FortuneAvenueGame({
     };
   }, [acceptRoomResponse, credentials, fetchRoom, state]);
 
+  useEffect(() => {
+    if (!state || state.phase !== "finished" || recordedProfileRoom.current === state.code) return;
+    recordedProfileRoom.current = state.code;
+    const timer = window.setTimeout(() => {
+      void syncProfile(playerName, pawnSlug).catch(() => {
+        // The finished room remains valid even if profile statistics refresh later.
+      });
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [pawnSlug, playerName, state, syncProfile]);
+
   const openSetup = (mode: SetupMode) => {
     setSetupMode(mode);
     setError(null);
@@ -327,10 +433,29 @@ export default function FortuneAvenueGame({
     setError(null);
     storageSet(NAME_KEY, playerName.trim());
     try {
-      const endpoint = setupMode === "join" ? `/api/rooms/${joinCode}/join` : "/api/rooms";
+      let linkedProfile = profileCredentials;
+      if (!(setupMode === "join" && joinAsSpectator)) {
+        try {
+          linkedProfile = await syncProfile(playerName, pawnSlug);
+        } catch {
+          // A profile is an enhancement; it never blocks opening a game.
+        }
+      }
+      const endpoint = setupMode === "join"
+        ? `/api/rooms/${joinCode}/${joinAsSpectator ? "spectate" : "join"}`
+        : "/api/rooms";
       const payload = setupMode === "join"
-        ? { name: playerName, pawnSlug }
-        : { name: playerName, pawnSlug, theme, kind: setupMode === "friends" ? "friends" : "bots", maxPlayers: playerCount, botCount };
+        ? joinAsSpectator ? {} : { name: playerName, pawnSlug, profileCredentials: linkedProfile }
+        : {
+            name: playerName,
+            pawnSlug,
+            theme,
+            matchMode,
+            kind: setupMode === "friends" ? "friends" : "bots",
+            maxPlayers: playerCount,
+            botCount,
+            profileCredentials: linkedProfile,
+          };
       const response = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const data = await response.json() as RoomApiResponse;
       if (!response.ok) throw new Error(data.error || "The room could not be opened.");
@@ -400,6 +525,18 @@ export default function FortuneAvenueGame({
     });
   };
 
+  const toggleHaptics = () => {
+    setHaptics((value) => {
+      storageSet(HAPTICS_KEY, String(!value));
+      return !value;
+    });
+  };
+
+  const finishTutorial = () => {
+    storageSet(TUTORIAL_KEY, "true");
+    setTutorialOpen(false);
+  };
+
   const goHome = () => {
     setScreen("home");
     setState(null);
@@ -416,14 +553,16 @@ export default function FortuneAvenueGame({
 
   return (
     <>
-      {screen === "home" && <HomeScreen recentRoom={recentRoom} onMode={openSetup} onResume={() => recentRoom && void resumeCode(recentRoom)} onRules={() => setShowRules(true)} />}
-      {screen === "setup" && <SetupScreen mode={setupMode} name={playerName} setName={setPlayerName} pawnSlug={pawnSlug} setPawnSlug={setPawnSlug} theme={theme} setTheme={setTheme} playerCount={playerCount} setPlayerCount={setPlayerCount} botCount={botCount} setBotCount={setBotCount} joinCode={joinCode} setJoinCode={setJoinCode} onSubmit={submitSetup} onBack={() => setScreen("home")} busy={busy} error={error} />}
+      {screen === "home" && <HomeScreen recentRoom={recentRoom} onMode={openSetup} onResume={() => recentRoom && void resumeCode(recentRoom)} onRules={() => setShowRules(true)} onProfile={() => setProfileOpen(true)} profile={profile} />}
+      {screen === "setup" && <SetupScreen mode={setupMode} name={playerName} setName={setPlayerName} pawnSlug={pawnSlug} setPawnSlug={setPawnSlug} theme={theme} setTheme={setTheme} playerCount={playerCount} setPlayerCount={setPlayerCount} botCount={botCount} setBotCount={setBotCount} matchMode={matchMode} setMatchMode={setMatchMode} joinAsSpectator={joinAsSpectator} setJoinAsSpectator={setJoinAsSpectator} joinCode={joinCode} setJoinCode={setJoinCode} onSubmit={submitSetup} onBack={() => setScreen("home")} busy={busy} error={error} />}
       {screen === "loading" && <LoadingScreen />}
       {screen === "lobby" && state && you && <LobbyScreen state={state} you={you} onShare={shareRoom} onStart={() => sendAction({ type: "start" })} onRules={() => setShowRules(true)} busy={busy} />}
-      {screen === "game" && state && you && <GameScreen state={state} you={you} onAction={sendAction} onShare={shareRoom} onRules={() => setShowRules(true)} onHome={goHome} busy={busy} muted={muted} onToggleMuted={toggleMuted} onMotionChange={setPawnMotionBusy} selectedSpace={selectedSpace} setSelectedSpace={setSelectedSpace} />}
+      {screen === "game" && state && you && <GameScreen state={state} you={you} onAction={sendAction} onShare={shareRoom} onRules={() => setShowRules(true)} onHome={goHome} busy={busy} muted={muted} onToggleMuted={toggleMuted} haptics={haptics} onToggleHaptics={toggleHaptics} onMotionChange={setPawnMotionBusy} selectedSpace={selectedSpace} setSelectedSpace={setSelectedSpace} />}
       {showRules && <RulesCard onClose={() => setShowRules(false)} />}
       {cardReveal && <CardReveal event={cardReveal} drawerName={state?.players.find((player) => player.id === cardReveal.playerId)?.name} onClose={() => setCardReveal(null)} />}
       {state && cashQueue[0] && !pawnMotionBusy && !showRules && !cardReveal && <CashCollection key={cashQueue[0].id} event={cashQueue[0]} state={state} onCollect={() => setCashQueue((queue) => queue.slice(1))} />}
+      {profileOpen && <ProfilePanel profile={profile} loading={profileLoading} onClose={() => setProfileOpen(false)} onReplayTutorial={() => { setProfileOpen(false); setTutorialOpen(true); }} />}
+      {tutorialOpen && <TutorialOverlay onFinish={finishTutorial} onSkip={finishTutorial} />}
       {toast && <div className="toast" role="status">{toast}</div>}
     </>
   );

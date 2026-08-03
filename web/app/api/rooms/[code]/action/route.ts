@@ -1,6 +1,7 @@
 import { applyRoomAction, runBotTurns } from "@/lib/game-engine";
+import { recordFinishedProfiles } from "@/lib/profile-storage";
 import type { RoomAction } from "@/lib/game-types";
-import { ensureRoomSchema, loadRoom, saveRoom, verifySession } from "@/lib/room-storage";
+import { ensureRoomSchema, loadRoom, loadSession, saveRoom } from "@/lib/room-storage";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +20,11 @@ const ACTIONS = new Set([
   "steal-landmark",
   "resolve-card-choice",
   "upgrade",
+  "sell-upgrade",
+  "mortgage",
+  "unmortgage",
+  "settle-debt",
+  "declare-bankruptcy",
   "use-card",
   "end-turn",
 ]);
@@ -37,8 +43,12 @@ export async function POST(request: Request, context: { params: Promise<{ code: 
     if (!body.playerId || !body.resumeToken || !body.action || !ACTIONS.has(body.action.type)) {
       return Response.json({ error: "That move was incomplete." }, { status: 400 });
     }
-    if (!await verifySession(code, body.playerId, body.resumeToken)) {
+    const session = await loadSession(code, body.playerId, body.resumeToken);
+    if (!session) {
       return Response.json({ error: "Your seat could not be verified. Rejoin the room." }, { status: 401 });
+    }
+    if (session.role === "spectator") {
+      return Response.json({ error: "Spectators can watch every move but cannot play a turn." }, { status: 403 });
     }
     const source = await loadRoom(code);
     if (!source) return Response.json({ error: "That room code was not found." }, { status: 404 });
@@ -50,6 +60,13 @@ export async function POST(request: Request, context: { params: Promise<{ code: 
       state = runBotTurns(state, { singleAuctionStep: true });
     }
     await saveRoom(state, source.revision);
+    if (state.phase === "finished") {
+      try {
+        await recordFinishedProfiles(state);
+      } catch {
+        // A profile update never blocks the finished game or its saved room.
+      }
+    }
     return Response.json({
       state,
       you: { playerId: body.playerId, isHost: state.hostPlayerId === body.playerId },
