@@ -92,7 +92,7 @@ const TUTORIAL_STEPS = [
     icon: Castle,
     eyebrow: "Step 3 of 6",
     title: "Complete, crown, castle",
-    copy: "Own all four landmarks in a matching-color district. Add two crowns, then make the third upgrade a castle. Every build raises that landmark’s entry fee.",
+    copy: "Match the D-number and symbol on all four landmarks in a district. Add two crowns, then make the third upgrade a castle. Every build raises that landmark’s entry fee.",
   },
   {
     icon: Handshake,

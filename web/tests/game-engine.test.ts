@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { access } from "node:fs/promises";
 import test from "node:test";
-import { LUCKY_CARDS, MATCH_MODES, PAWNS, PLOT_CARDS, SPACE_BY_INDEX, SPACES } from "../lib/game-data";
+import { DISTRICT_DETAILS, LUCKY_CARDS, MATCH_MODES, PAWNS, PLOT_CARDS, SPACE_BY_INDEX, SPACES } from "../lib/game-data";
 import {
   addHumanPlayer,
   applyRoomAction,
@@ -124,6 +124,11 @@ test("uses the complete approved game collection", () => {
   assert.equal(PLOT_CARDS[18].title, "Steal a Landmark");
   assert.equal(PAWNS.length, 9);
   assert.equal(SPACE_BY_INDEX.get(2)?.name, "Bicth Valley");
+  assert.equal(DISTRICT_DETAILS.length, 6);
+  assert.equal(new Set(DISTRICT_DETAILS.map((district) => district.color)).size, 6);
+  assert.equal(new Set(DISTRICT_DETAILS.map((district) => district.code)).size, 6);
+  assert.equal(new Set(DISTRICT_DETAILS.map((district) => district.symbol)).size, 6);
+  assert.ok(DISTRICT_DETAILS.every((_, district) => SPACES.filter((space) => space.district === district).length === 4));
   assert.ok(SPACES.every((space) => space.asset.endsWith(".webp")));
   assert.ok([...LUCKY_CARDS, ...PLOT_CARDS, ...PAWNS].every((item) => item.image.endsWith(".webp")));
 });

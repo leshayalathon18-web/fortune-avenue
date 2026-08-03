@@ -51,22 +51,13 @@ export const MATCH_MODES: Record<MatchMode, {
   },
 };
 
-const DISTRICT_NAMES = [
-  "Strange Beginnings",
-  "Roadside Wonders",
-  "After Hours",
-  "Bad Decisions",
-  "Midnight Commerce",
-  "The Final Stretch",
-] as const;
-
-const DISTRICT_COLORS = [
-  "#7357b8",
-  "#1aa596",
-  "#db5b43",
-  "#d99028",
-  "#b84279",
-  "#d2a743",
+export const DISTRICT_DETAILS = [
+  { code: "D1", symbol: "◆", name: "Strange Beginnings", color: "#9B6DFF" },
+  { code: "D2", symbol: "●", name: "Roadside Wonders", color: "#16D9D0" },
+  { code: "D3", symbol: "▲", name: "After Hours", color: "#FF405D" },
+  { code: "D4", symbol: "✦", name: "Bad Decisions", color: "#FF8A1F" },
+  { code: "D5", symbol: "✚", name: "Midnight Commerce", color: "#FF4FC3" },
+  { code: "D6", symbol: "⬢", name: "The Final Stretch", color: "#C9F24B" },
 ] as const;
 
 const LANDMARK_BASE_PRICE = [90, 140, 200, 260, 330, 420] as const;
@@ -121,8 +112,8 @@ export const SPACES: SpaceDefinition[] = rawGameData.spaces.map((raw) => {
       ? `/art/landmarks/${filename(raw.asset)}`
       : `/art/spaces/${filename(raw.asset)}`,
     district,
-    districtName: district === null ? null : DISTRICT_NAMES[district],
-    districtColor: district === null ? "#b58a37" : DISTRICT_COLORS[district],
+    districtName: district === null ? null : DISTRICT_DETAILS[district].name,
+    districtColor: district === null ? "#b58a37" : DISTRICT_DETAILS[district].color,
     price,
     baseRent,
     upgradeCost,
@@ -185,4 +176,4 @@ export const SPACE_BY_INDEX = new Map(SPACES.map((space) => [space.index, space]
 
 export const GAME_TITLE = rawGameData.title;
 export const GAME_TAGLINE = rawGameData.tagline;
-export const DISTRICTS = DISTRICT_NAMES;
+export const DISTRICTS = DISTRICT_DETAILS.map((district) => district.name);
