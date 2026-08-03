@@ -16,7 +16,7 @@ test("ships the finished Fortune Avenue opening and social metadata", async () =
     readFile(new URL("../app/error.tsx", import.meta.url), "utf8"),
   ]);
   assert.match(opening, /Enter the Avenue/);
-  assert.match(opening, /href="\/play\?release=14"/);
+  assert.match(opening, /href="\/play\?release=15"/);
   assert.match(opening, /z-index: 2147483647/);
   assert.match(opening, /\.panel \{[^}]*opacity: 1;[^}]*visibility: visible;/);
   assert.match(opening, /url\("\/og\.png\?cover=2"\)/);
@@ -24,14 +24,14 @@ test("ships the finished Fortune Avenue opening and social metadata", async () =
   assert.doesNotMatch(opening, /<script\b/i);
   assert.match(layout, /Fortune Avenue.+Play with bots or friends/);
   assert.match(layout, /og\.png/);
-  assert.match(page, /redirect\("\/opening\.html\?release=14"\)/);
-  assert.match(launchPage, /redirect\("\/opening\.html\?release=14"\)/);
+  assert.match(page, /redirect\("\/opening\.html\?release=15"\)/);
+  assert.match(launchPage, /redirect\("\/opening\.html\?release=15"\)/);
   assert.match(playPage, /FortuneAvenueGame/);
   assert.match(game, /function storageGet/);
   assert.match(game, /seenCardEvents/);
   assert.match(game, /setCardQueue/);
   assert.match(shared, /src="\/og\.png\?cover=2"[\s\S]*unoptimized/);
-  assert.match(shared, /import \{ Crown, Dices, KeyRound \} from "lucide-react"/);
+  assert.match(shared, /import \{ Crown, Dices, Eye, KeyRound, Trophy, UserRound \} from "lucide-react"/);
   assert.match(shared, /<Dices \/>/);
   assert.match(shared, /<Crown \/>/);
   assert.match(shared, /<KeyRound \/>/);
@@ -55,7 +55,7 @@ test("ships the finished Fortune Avenue opening and social metadata", async () =
   assert.doesNotMatch(gameTable, /Shake phone or tap dice to roll|Tap dice to roll/);
   assert.match(gameTable, /export function CashCollection/);
   assert.match(gameTable, /<Castle aria-hidden="true" \/>/);
-  assert.match(shared, /after 180 turns/);
+  assert.match(shared, /Classic: 180 turns/);
   assert.doesNotMatch(`${game}${shared}`, /screen === "opening"|OpeningScreen/);
   assert.match(game, /useState<Screen>\(sanitizedInitialRoom\.length === 6 \? "loading" : "home"\)/);
   assert.match(styles, /\.home-menu \{[^}]*order: -1/);
@@ -99,4 +99,75 @@ test("ships the bespoke cover, game art, and persistent-room migration", async (
   assert.match(migration, /idx_fortune_rooms_updated_at/);
   assert.match(nextConfig, /images:\s*\{\s*unoptimized: true/);
   assert.doesNotMatch(await readFile(new URL("../package.json", import.meta.url), "utf8"), /react-loading-skeleton/);
+});
+
+test("ships the Avenue expansion with profiles, spectators, rescue tools, and polished controls", async () => {
+  const [
+    game,
+    gameTable,
+    shared,
+    playerExperience,
+    engine,
+    gameTypes,
+    profileStorage,
+    profileRoute,
+    spectatorRoute,
+    roomStorage,
+    migration,
+    styles,
+    manifest,
+  ] = await Promise.all([
+    readFile(new URL("../app/FortuneAvenueGame.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/ui/game-table.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/ui/shared.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/ui/player-experience.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../lib/game-engine.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/game-types.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/profile-storage.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/profile/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/rooms/[code]/spectate/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/room-storage.ts", import.meta.url), "utf8"),
+    readFile(new URL("../drizzle/0001_spooky_imperial_guard.sql", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+    readFile(new URL("../public/manifest.webmanifest", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(shared, /Match style/);
+  assert.match(shared, /Object\.keys\(MATCH_MODES\)/);
+  assert.match(shared, /Watch live/);
+  assert.match(shared, /Avenue profile/);
+  assert.match(playerExperience, /Achievement cabinet/);
+  assert.match(playerExperience, /Step 6 of 6/);
+  assert.match(playerExperience, /Rescue a bad fortune/);
+  assert.match(gameTable, /function DeedManager/);
+  assert.match(gameTable, /function BankruptcyRescue/);
+  assert.match(gameTable, /Mortgage deed/);
+  assert.match(gameTable, /Sell castle/);
+  assert.match(gameTable, /Settle \{money\(debt\.remainingAmount\)\}/);
+  assert.match(gameTable, /function PawnReaction/);
+  assert.match(gameTable, /pawn-victory-stage/);
+  assert.match(gameTypes, /type MatchMode = "classic" \| "party" \| "grand-finale"/);
+  assert.match(gameTypes, /type: "sell-upgrade"/);
+  assert.match(gameTypes, /type: "mortgage"/);
+  assert.match(gameTypes, /type: "declare-bankruptcy"/);
+  assert.match(engine, /function botRescueAction/);
+  assert.match(engine, /export function normalizeGameState/);
+  assert.match(engine, /mortgaged deed/i);
+  assert.match(game, /navigator\.vibrate/);
+  assert.match(game, /createOscillator/);
+  assert.match(game, /ProfilePanel/);
+  assert.match(game, /TutorialOverlay/);
+  assert.match(profileRoute, /createProfile/);
+  assert.match(profileStorage, /recordFinishedProfiles/);
+  assert.match(spectatorRoute, /role: "spectator"/);
+  assert.match(roomStorage, /normalizeGameState/);
+  assert.match(migration, /CREATE TABLE `fortune_profiles`/);
+  assert.match(migration, /CREATE TABLE `fortune_profile_games`/);
+  assert.match(migration, /ADD `role` text DEFAULT 'player'/);
+  assert.match(styles, /\.deed-manager \{/);
+  assert.match(styles, /\.rescue-house \{/);
+  assert.match(styles, /\.profile-panel \{/);
+  assert.match(styles, /\.tutorial-card \{/);
+  assert.match(styles, /@keyframes reaction-pop/);
+  assert.match(manifest, /"start_url": "\/opening\.html\?release=15"/);
 });

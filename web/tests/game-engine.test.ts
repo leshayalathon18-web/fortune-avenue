@@ -1,19 +1,23 @@
 import assert from "node:assert/strict";
 import { access } from "node:fs/promises";
 import test from "node:test";
-import { LUCKY_CARDS, PAWNS, PLOT_CARDS, SPACE_BY_INDEX, SPACES } from "../lib/game-data";
+import { LUCKY_CARDS, MATCH_MODES, PAWNS, PLOT_CARDS, SPACE_BY_INDEX, SPACES } from "../lib/game-data";
 import {
   addHumanPlayer,
   applyRoomAction,
   createLobbyState,
   currentPlayer,
+  mortgageValue,
   netWorth,
+  normalizeGameState,
   ownedProperties,
   propertyPostedRent,
   propertyRent,
   propertyRentPauseReason,
   runBotTurns,
   startGame,
+  unmortgageCost,
+  upgradeRefund,
 } from "../lib/game-engine";
 
 function lobby(botCount = 1) {
@@ -530,4 +534,246 @@ test("keeps a castle's posted fee visible while a temporary blackout pauses coll
   assert.equal(propertyPostedRent(state, state.properties["1"], 7), 96);
   assert.equal(propertyRent(state, state.properties["1"], 7), 0);
   assert.equal(propertyRentPauseReason(state, state.properties["1"]), "Neighborhood Blackout");
+});
+
+test("applies each match mode's starting bank, victory target, and closing bell", () => {
+  for (const mode of ["classic", "party", "grand-finale"] as const) {
+    const state = createLobbyState({
+      code: "MODE42",
+      kind: "bots",
+      theme: "emerald",
+      maxPlayers: 2,
+      hostPlayerId: "host",
+      hostName: "Host",
+      pawnSlug: "fortune-penguin",
+      botCount: 1,
+      seed: 42,
+      matchMode: mode,
+    });
+    const config = MATCH_MODES[mode];
+    assert.equal(state.settings.matchMode, mode);
+    assert.equal(state.settings.startCash, config.startCash);
+    assert.equal(state.settings.targetNetWorth, config.targetNetWorth);
+    assert.equal(state.settings.requiredProperties, config.requiredProperties);
+    assert.equal(state.settings.maxTurns, config.maxTurns);
+    assert.ok(state.players.every((player) => player.cash === config.startCash));
+  }
+});
+
+test("mortgages a clear deed, pauses its fee, and reopens it with interest", () => {
+  let state = startGame(lobby(1));
+  const space = SPACE_BY_INDEX.get(7)!;
+  state.properties["7"] = {
+    spaceIndex: 7,
+    ownerId: "host",
+    purchasePrice: space.price,
+    upgrades: 0,
+    mortgaged: false,
+    closedUntilTurn: 0,
+    rentMultiplierUntilTurn: 0,
+    nextVisitorFree: false,
+  };
+  const startingCash = state.players[0].cash;
+
+  state = applyRoomAction(state, "host", { type: "mortgage", spaceIndex: 7 });
+  assert.equal(state.properties["7"].mortgaged, true);
+  assert.equal(state.players[0].cash, startingCash + mortgageValue(space));
+  assert.equal(propertyRent(state, state.properties["7"], 7), 0);
+  assert.equal(propertyRentPauseReason(state, state.properties["7"]), "Mortgaged deed");
+
+  state = applyRoomAction(state, "host", { type: "unmortgage", spaceIndex: 7 });
+  assert.equal(state.properties["7"].mortgaged, false);
+  assert.equal(state.players[0].cash, startingCash + mortgageValue(space) - unmortgageCost(space));
+  assert.ok(propertyRent(state, state.properties["7"], 7) > 0);
+});
+
+test("requires every crown in a district to be sold before a mortgage", () => {
+  let state = startGame(lobby(1));
+  for (const spaceIndex of [1, 2, 4, 5]) {
+    state.properties[String(spaceIndex)] = {
+      spaceIndex,
+      ownerId: "host",
+      purchasePrice: SPACE_BY_INDEX.get(spaceIndex)!.price,
+      upgrades: spaceIndex === 1 ? 3 : 0,
+      mortgaged: false,
+      closedUntilTurn: 0,
+      rentMultiplierUntilTurn: 0,
+      nextVisitorFree: false,
+    };
+  }
+  assert.throws(
+    () => applyRoomAction(state, "host", { type: "mortgage", spaceIndex: 2 }),
+    /Sell every crown and castle/,
+  );
+
+  const refund = upgradeRefund(SPACE_BY_INDEX.get(1)!);
+  const cashBefore = state.players[0].cash;
+  state = applyRoomAction(state, "host", { type: "sell-upgrade", spaceIndex: 1 });
+  state = applyRoomAction(state, "host", { type: "sell-upgrade", spaceIndex: 1 });
+  state = applyRoomAction(state, "host", { type: "sell-upgrade", spaceIndex: 1 });
+  assert.equal(state.properties["1"].upgrades, 0);
+  assert.equal(state.players[0].cash, cashBefore + refund * 3);
+  assert.equal(state.lastEvent?.title, "Crown sold");
+
+  state = applyRoomAction(state, "host", { type: "mortgage", spaceIndex: 2 });
+  assert.equal(state.properties["2"].mortgaged, true);
+});
+
+test("pauses for a bankruptcy rescue and lets the player mortgage then settle the balance", () => {
+  const withFriend = addHumanPlayer(lobby(0), "friend", "Friend", "fortune-key");
+  const initial = startGame(withFriend);
+  const probe = applyRoomAction(initial, "host", { type: "roll" });
+  const total = (probe.dice?.[0] ?? 0) + (probe.dice?.[1] ?? 0);
+  initial.players[0].position = 21 - total;
+  initial.properties["21"] = {
+    spaceIndex: 21,
+    ownerId: "friend",
+    purchasePrice: SPACE_BY_INDEX.get(21)!.price,
+    upgrades: 0,
+    mortgaged: false,
+    closedUntilTurn: 0,
+    rentMultiplierUntilTurn: 0,
+    nextVisitorFree: false,
+  };
+  const fullFee = propertyRent(initial, initial.properties["21"], 7);
+  initial.players[0].cash = fullFee - 6;
+  const rescueSpace = SPACE_BY_INDEX.get(7)!;
+  initial.properties["7"] = {
+    spaceIndex: 7,
+    ownerId: "host",
+    purchasePrice: rescueSpace.price,
+    upgrades: 0,
+    mortgaged: false,
+    closedUntilTurn: 0,
+    rentMultiplierUntilTurn: 0,
+    nextVisitorFree: false,
+  };
+
+  let state = applyRoomAction(initial, "host", { type: "roll" });
+  assert.equal(state.players[0].cash, 0);
+  assert.equal(state.players[0].bankrupt, false);
+  assert.equal(state.bankruptcyQueue[0]?.remainingAmount, 6);
+  assert.throws(() => applyRoomAction(state, "host", { type: "end-turn" }), /Raise cash|bankruptcy rescue/);
+
+  state = applyRoomAction(state, "host", { type: "mortgage", spaceIndex: 7 });
+  assert.equal(state.players[0].cash, mortgageValue(rescueSpace));
+  state = applyRoomAction(state, "host", { type: "settle-debt" });
+  assert.equal(state.bankruptcyQueue.length, 0);
+  assert.equal(state.players[0].bankrupt, false);
+  assert.equal(state.players[1].cash, 1400 + fullFee);
+  assert.equal(state.players[0].cash, mortgageValue(rescueSpace) - 6);
+});
+
+test("a payment that reaches exactly zero does not trigger bankruptcy", () => {
+  const withFriend = addHumanPlayer(lobby(0), "friend", "Friend", "fortune-key");
+  const initial = startGame(withFriend);
+  const probe = applyRoomAction(initial, "host", { type: "roll" });
+  const total = (probe.dice?.[0] ?? 0) + (probe.dice?.[1] ?? 0);
+  initial.players[0].position = 21 - total;
+  initial.properties["21"] = {
+    spaceIndex: 21,
+    ownerId: "friend",
+    purchasePrice: SPACE_BY_INDEX.get(21)!.price,
+    upgrades: 0,
+    mortgaged: false,
+    closedUntilTurn: 0,
+    rentMultiplierUntilTurn: 0,
+    nextVisitorFree: false,
+  };
+  initial.players[0].cash = propertyRent(initial, initial.properties["21"], 7);
+
+  const state = applyRoomAction(initial, "host", { type: "roll" });
+  assert.equal(state.players[0].cash, 0);
+  assert.equal(state.players[0].bankrupt, false);
+  assert.equal(state.bankruptcyQueue.length, 0);
+});
+
+test("declaring bankruptcy transfers remaining deeds to the player who is owed", () => {
+  const withFriend = addHumanPlayer(lobby(0), "friend", "Friend", "fortune-key");
+  const initial = startGame(withFriend);
+  const probe = applyRoomAction(initial, "host", { type: "roll" });
+  const total = (probe.dice?.[0] ?? 0) + (probe.dice?.[1] ?? 0);
+  initial.players[0].position = 21 - total;
+  initial.players[0].cash = 0;
+  initial.properties["21"] = {
+    spaceIndex: 21,
+    ownerId: "friend",
+    purchasePrice: SPACE_BY_INDEX.get(21)!.price,
+    upgrades: 0,
+    mortgaged: false,
+    closedUntilTurn: 0,
+    rentMultiplierUntilTurn: 0,
+    nextVisitorFree: false,
+  };
+  for (const spaceIndex of [7, 8]) {
+    initial.properties[String(spaceIndex)] = {
+      spaceIndex,
+      ownerId: "host",
+      purchasePrice: SPACE_BY_INDEX.get(spaceIndex)!.price,
+      upgrades: 0,
+      mortgaged: false,
+      closedUntilTurn: 0,
+      rentMultiplierUntilTurn: 0,
+      nextVisitorFree: false,
+    };
+  }
+
+  let state = applyRoomAction(initial, "host", { type: "roll" });
+  assert.equal(state.bankruptcyQueue[0]?.creditorId, "friend");
+  state = applyRoomAction(state, "host", { type: "declare-bankruptcy" });
+  assert.equal(state.players[0].bankrupt, true);
+  assert.equal(state.properties["7"].ownerId, "friend");
+  assert.equal(state.properties["8"].ownerId, "friend");
+  assert.equal(state.phase, "finished");
+  assert.equal(state.winnerId, "friend");
+});
+
+test("bots automatically liquidate or declare bankruptcy so the table cannot stall", () => {
+  const initial = startGame(lobby(1));
+  const bot = initial.players[1];
+  const probeState = structuredClone(initial);
+  probeState.currentPlayerIndex = 1;
+  const probe = applyRoomAction(probeState, bot.id, { type: "roll" });
+  const total = (probe.dice?.[0] ?? 0) + (probe.dice?.[1] ?? 0);
+  initial.currentPlayerIndex = 1;
+  bot.position = 21 - total;
+  bot.cash = 0;
+  initial.properties["21"] = {
+    spaceIndex: 21,
+    ownerId: "host",
+    purchasePrice: SPACE_BY_INDEX.get(21)!.price,
+    upgrades: 0,
+    mortgaged: false,
+    closedUntilTurn: 0,
+    rentMultiplierUntilTurn: 0,
+    nextVisitorFree: false,
+  };
+
+  const state = runBotTurns(initial);
+  assert.equal(state.bankruptcyQueue.length, 0);
+  assert.equal(state.players[1].bankrupt, true);
+  assert.equal(state.phase, "finished");
+  assert.equal(state.winnerId, "host");
+});
+
+test("normalizes older saved rooms with profiles, mortgages, and rescue defaults", () => {
+  const legacy = startGame(lobby(1));
+  legacy.properties["1"] = {
+    spaceIndex: 1,
+    ownerId: "host",
+    upgrades: 0,
+    closedUntilTurn: 0,
+    rentMultiplierUntilTurn: 0,
+    nextVisitorFree: false,
+  };
+  Reflect.deleteProperty(legacy, "bankruptcyQueue");
+  Reflect.deleteProperty(legacy.settings, "matchMode");
+  Reflect.deleteProperty(legacy.properties["1"], "mortgaged");
+  Reflect.deleteProperty(legacy.players[0], "gameStats");
+
+  const normalized = normalizeGameState(legacy);
+  assert.equal(normalized.settings.matchMode, "classic");
+  assert.deepEqual(normalized.bankruptcyQueue, []);
+  assert.equal(normalized.properties["1"].mortgaged, false);
+  assert.equal(normalized.players[0].gameStats?.tradesCompleted, 0);
 });

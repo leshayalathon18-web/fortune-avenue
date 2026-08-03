@@ -1,5 +1,6 @@
 import { env } from "cloudflare:workers";
-import type { FortuneGameState } from "./game-types";
+import { normalizeGameState } from "./game-engine";
+import type { FortuneGameState, SessionRole } from "./game-types";
 
 const ROOM_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 
@@ -24,6 +25,8 @@ export async function ensureRoomSchema() {
         room_code TEXT NOT NULL,
         player_id TEXT NOT NULL,
         token_hash TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'player',
+        profile_id TEXT,
         joined_at TEXT NOT NULL,
         last_seen_at TEXT NOT NULL,
         PRIMARY KEY (room_code, player_id)
@@ -37,7 +40,50 @@ export async function ensureRoomSchema() {
       CREATE INDEX IF NOT EXISTS idx_fortune_sessions_last_seen
       ON fortune_room_sessions(last_seen_at)
     `),
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS fortune_profiles (
+        id TEXT PRIMARY KEY NOT NULL,
+        token_hash TEXT NOT NULL,
+        display_name TEXT NOT NULL,
+        favorite_pawn_slug TEXT NOT NULL,
+        games_played INTEGER NOT NULL DEFAULT 0,
+        wins INTEGER NOT NULL DEFAULT 0,
+        biggest_fortune INTEGER NOT NULL DEFAULT 0,
+        districts_completed INTEGER NOT NULL DEFAULT 0,
+        castles_built INTEGER NOT NULL DEFAULT 0,
+        achievements_json TEXT NOT NULL DEFAULT '[]',
+        pawn_usage_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    `),
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS fortune_profile_games (
+        room_code TEXT NOT NULL,
+        player_id TEXT NOT NULL,
+        profile_id TEXT NOT NULL,
+        winner INTEGER NOT NULL DEFAULT 0,
+        final_fortune INTEGER NOT NULL,
+        recorded_at TEXT NOT NULL,
+        PRIMARY KEY (room_code, player_id)
+      )
+    `),
+    db.prepare(`
+      CREATE INDEX IF NOT EXISTS idx_fortune_profile_games_profile
+      ON fortune_profile_games(profile_id)
+    `),
   ]);
+  for (const statement of [
+    "ALTER TABLE fortune_room_sessions ADD COLUMN role TEXT NOT NULL DEFAULT 'player'",
+    "ALTER TABLE fortune_room_sessions ADD COLUMN profile_id TEXT",
+  ]) {
+    try {
+      await db.prepare(statement).run();
+    } catch (error) {
+      if (!(error instanceof Error) || !/duplicate column/i.test(error.message)) throw error;
+    }
+  }
+  await db.prepare("PRAGMA optimize").run();
 }
 
 export function randomId(prefix: string, bytes = 9) {
@@ -68,7 +114,7 @@ export async function loadRoom(code: string) {
     .bind(code)
     .first<{ state_json: string; revision: number }>();
   if (!row) return null;
-  const state = JSON.parse(row.state_json) as FortuneGameState;
+  const state = normalizeGameState(JSON.parse(row.state_json) as FortuneGameState);
   state.revision = row.revision;
   return state;
 }
@@ -106,27 +152,33 @@ export async function saveRoom(state: FortuneGameState, expectedRevision: number
   return state;
 }
 
-export async function registerSession(roomCode: string, playerId: string, token: string) {
+export async function registerSession(
+  roomCode: string,
+  playerId: string,
+  token: string,
+  role: SessionRole = "player",
+  profileId: string | null = null,
+) {
   const timestamp = new Date().toISOString();
   await database()
     .prepare(`
-      INSERT INTO fortune_room_sessions (room_code, player_id, token_hash, joined_at, last_seen_at)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO fortune_room_sessions (room_code, player_id, token_hash, role, profile_id, joined_at, last_seen_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `)
-    .bind(roomCode, playerId, await tokenHash(token), timestamp, timestamp)
+    .bind(roomCode, playerId, await tokenHash(token), role, profileId, timestamp, timestamp)
     .run();
 }
 
-export async function verifySession(roomCode: string, playerId: string, token: string) {
+export async function loadSession(roomCode: string, playerId: string, token: string) {
   if (!playerId || !token) return false;
   const row = await database()
     .prepare(`
-      SELECT token_hash
+      SELECT token_hash, role, profile_id
       FROM fortune_room_sessions
       WHERE room_code = ? AND player_id = ?
     `)
     .bind(roomCode, playerId)
-    .first<{ token_hash: string }>();
+    .first<{ token_hash: string; role: SessionRole; profile_id: string | null }>();
   if (!row || row.token_hash !== await tokenHash(token)) return false;
   await database()
     .prepare(`
@@ -136,5 +188,9 @@ export async function verifySession(roomCode: string, playerId: string, token: s
     `)
     .bind(new Date().toISOString(), roomCode, playerId)
     .run();
-  return true;
+  return { role: row.role === "spectator" ? "spectator" as const : "player" as const, profileId: row.profile_id };
+}
+
+export async function verifySession(roomCode: string, playerId: string, token: string) {
+  return Boolean(await loadSession(roomCode, playerId, token));
 }

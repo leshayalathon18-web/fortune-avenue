@@ -1,5 +1,7 @@
 import { addHumanPlayer } from "@/lib/game-engine";
 import { PAWNS } from "@/lib/game-data";
+import { verifiedProfileId } from "@/lib/profile-storage";
+import type { ProfileCredentials } from "@/lib/game-types";
 import {
   ensureRoomSchema,
   loadRoom,
@@ -18,17 +20,18 @@ export async function POST(request: Request, context: { params: Promise<{ code: 
     const code = rawCode.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
     const source = await loadRoom(code);
     if (!source) return Response.json({ error: "That room code was not found." }, { status: 404 });
-    const body = await request.json() as { name?: string; pawnSlug?: string };
+    const body = await request.json() as { name?: string; pawnSlug?: string; profileCredentials?: ProfileCredentials | null };
     const playerId = randomId("player");
     const resumeToken = randomResumeToken();
     const pawnSlug = PAWNS.some((pawn) => pawn.slug === body.pawnSlug) ? body.pawnSlug! : PAWNS[8].slug;
+    const profileId = await verifiedProfileId(body.profileCredentials);
     const state = addHumanPlayer(source, playerId, body.name?.trim() || "Friend", pawnSlug);
     await saveRoom(state, source.revision);
-    await registerSession(code, playerId, resumeToken);
+    await registerSession(code, playerId, resumeToken, "player", profileId);
     return Response.json({
       state,
-      credentials: { roomCode: code, playerId, resumeToken },
-      you: { playerId, isHost: false },
+      credentials: { roomCode: code, playerId, resumeToken, role: "player" },
+      you: { playerId, isHost: false, isSpectator: false },
     }, { status: 201, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not join the room.";

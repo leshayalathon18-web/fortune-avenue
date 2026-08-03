@@ -1,6 +1,7 @@
 import { createLobbyState, runBotTurns, startGame } from "@/lib/game-engine";
 import { PAWNS } from "@/lib/game-data";
-import type { BoardTheme, RoomKind } from "@/lib/game-types";
+import { verifiedProfileId } from "@/lib/profile-storage";
+import type { BoardTheme, MatchMode, ProfileCredentials, RoomKind } from "@/lib/game-types";
 import {
   createRoomRecord,
   ensureRoomSchema,
@@ -27,6 +28,8 @@ export async function POST(request: Request) {
       kind?: RoomKind;
       maxPlayers?: number;
       botCount?: number;
+      matchMode?: MatchMode;
+      profileCredentials?: ProfileCredentials | null;
     };
     const name = body.name?.trim().slice(0, 24) || "Player One";
     const pawnSlug = PAWNS.some((pawn) => pawn.slug === body.pawnSlug) ? body.pawnSlug! : PAWNS[8].slug;
@@ -36,6 +39,10 @@ export async function POST(request: Request) {
     const botCount = kind === "bots"
       ? maxPlayers - 1
       : Math.min(maxPlayers - 1, Math.max(0, integer(body.botCount, 0)));
+    const matchMode: MatchMode = body.matchMode === "party" || body.matchMode === "grand-finale"
+      ? body.matchMode
+      : "classic";
+    const profileId = await verifiedProfileId(body.profileCredentials);
     const hostPlayerId = randomId("player");
     const resumeToken = randomResumeToken();
     let state = null;
@@ -53,17 +60,18 @@ export async function POST(request: Request) {
         pawnSlug,
         botCount,
         seed: crypto.getRandomValues(new Uint32Array(1))[0],
+        matchMode,
       });
       state = kind === "bots" ? runBotTurns(startGame(candidate)) : candidate;
       await createRoomRecord(state);
     }
 
     if (!state) return Response.json({ error: "Could not find an open room code. Try again." }, { status: 503 });
-    await registerSession(state.code, hostPlayerId, resumeToken);
+    await registerSession(state.code, hostPlayerId, resumeToken, "player", profileId);
     return Response.json({
       state,
-      credentials: { roomCode: state.code, playerId: hostPlayerId, resumeToken },
-      you: { playerId: hostPlayerId, isHost: true },
+      credentials: { roomCode: state.code, playerId: hostPlayerId, resumeToken, role: "player" },
+      you: { playerId: hostPlayerId, isHost: true, isSpectator: false },
     }, { status: 201, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not create the room.";

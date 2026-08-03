@@ -2,9 +2,9 @@
 
 import type { FormEvent } from "react";
 import Image from "next/image";
-import { Crown, Dices, KeyRound } from "lucide-react";
-import { PAWNS } from "@/lib/game-data";
-import type { BoardTheme, FortuneGameState, PawnDefinition } from "@/lib/game-types";
+import { Crown, Dices, Eye, KeyRound, Trophy, UserRound } from "lucide-react";
+import { MATCH_MODES, PAWNS } from "@/lib/game-data";
+import type { BoardTheme, FortuneGameState, MatchMode, PawnDefinition, PlayerProfile } from "@/lib/game-types";
 
 export type SetupMode = "bots" | "friends" | "join";
 
@@ -44,17 +44,19 @@ export function RulesCard({ onClose }: { onClose: () => void }) {
         <button className="modal-close" type="button" onClick={onClose} aria-label="Close rules">×</button>
         <div className="rules-kicker">Official digital rules • 2–6 players</div>
         <h2 id="rules-title">How to rule the Avenue</h2>
-        <p className="rules-intro">Build an eight-deed empire worth <strong>F5,000</strong>, or be the last player with cash when everybody else goes broke.</p>
+        <p className="rules-intro">Build an outrageous empire, survive the Avenue’s chaos, and finish with the Fortune Crown. The host chooses the match length before play.</p>
         <div className="rules-grid">
-          <article><span className="rule-number">01</span><h3>Shake, roll & roam</h3><p>Start with F1,400. Shake your phone and stop to cast the dice, or tap them on any device. Move clockwise and collect F200 when you pass Grand Entrance.</p></article>
+          <article><span className="rule-number">01</span><h3>Shake, roll & roam</h3><p>On mobile, shake and stop to splat the dice onto the board. On desktop, click the dice. Move clockwise and collect the mode’s Grand Entrance bonus.</p></article>
           <article><span className="rule-number">02</span><h3>Claim, auction, or skip</h3><p>Buy an unowned deed, open it to every active bidder, or skip the auction and leave it unclaimed. Visitors pay its entry fee. A complete district doubles base fees.</p></article>
           <article><span className="rule-number">03</span><h3>Crown your district</h3><p>Own every landmark in one matching-color district to build there. Add two crowns for rising fees; the third build becomes a castle with the highest fee.</p></article>
-          <article><span className="rule-number">04</span><h3>Take the twist</h3><p>Lucky Break and Plot Twist cards resolve instantly. Choice-heavy cards make a smart automatic choice so online turns stay quick.</p></article>
-          <article><span className="rule-number">05</span><h3>Know the corners</h3><p>City Hall costs F60, Street Festival pays F90, and cards can send you to Wrong Turn for a one-turn timeout.</p></article>
-          <article><span className="rule-number">06</span><h3>Trade & collect</h3><p>Offer landmarks, cash, or both; the other player or bot can accept or decline. Pull entry-fee cash into your vault. Rooms resume after reloads or sharing.</p></article>
+          <article><span className="rule-number">04</span><h3>Manage your deeds</h3><p>Mortgage an unimproved deed for half its price. Repay that amount plus 20% to reopen it. Sell crowns and castles back for half their build cost.</p></article>
+          <article><span className="rule-number">05</span><h3>Rescue your fortune</h3><p>If a fee empties your vault, the table pauses. Mortgage, sell, or trade until you can settle the balance—or declare bankruptcy.</p></article>
+          <article><span className="rule-number">06</span><h3>Take the twist</h3><p>Lucky Break and Plot Twist cards appear for everybody. When a card asks you to choose, tap the exact deed, district, player, or decision you want.</p></article>
+          <article><span className="rule-number">07</span><h3>Trade & collect</h3><p>Offer landmarks, cash, or both; the other player or bot can accept or decline. Pull entry-fee cash into your vault. Mortgaged deeds must be reopened before trading.</p></article>
+          <article><span className="rule-number">08</span><h3>Leave and return</h3><p>Rooms persist when you reload or leave to share. Rejoin your saved seat, or enter any room as a spectator without taking a player slot.</p></article>
         </div>
         <div className="rules-footer">
-          <span>Classic night: after 180 turns, highest net worth wins.</span>
+          <span>Classic: 180 turns • Party: 90 turns • Grand Finale: richest empire after turn 140.</span>
           <button className="gold-button compact" type="button" onClick={onClose}>Let’s roll</button>
         </div>
       </section>
@@ -67,11 +69,15 @@ export function HomeScreen({
   onMode,
   onResume,
   onRules,
+  onProfile,
+  profile,
 }: {
   recentRoom: string | null;
   onMode: (mode: SetupMode) => void;
   onResume: () => void;
   onRules: () => void;
+  onProfile: () => void;
+  profile: PlayerProfile | null;
 }) {
   return (
     <main className="home-screen">
@@ -105,6 +111,10 @@ export function HomeScreen({
           <button className="menu-button dark-action" type="button" onClick={() => onMode("join")}>
             <span className="menu-button-icon join-room-icon" aria-hidden="true"><KeyRound /></span>
             <span><strong>Join a room</strong><small>Enter a friend’s quick code</small></span>
+          </button>
+          <button className="profile-home-button" type="button" onClick={onProfile}>
+            <span className="profile-home-icon" aria-hidden="true">{profile?.wins ? <Trophy /> : <UserRound />}</span>
+            <span><strong>{profile ? `${profile.displayName}’s profile` : "Avenue profile"}</strong><small>{profile ? `${profile.wins} wins • ${profile.achievements.length} achievements` : "Track wins, fortunes, castles, and achievements"}</small></span>
           </button>
         </div>
         <button className="text-button" type="button" onClick={onRules}>View the rules card</button>
@@ -147,6 +157,10 @@ export function SetupScreen({
   setPlayerCount,
   botCount,
   setBotCount,
+  matchMode,
+  setMatchMode,
+  joinAsSpectator,
+  setJoinAsSpectator,
   joinCode,
   setJoinCode,
   onSubmit,
@@ -165,6 +179,10 @@ export function SetupScreen({
   setPlayerCount: (value: number) => void;
   botCount: number;
   setBotCount: (value: number) => void;
+  matchMode: MatchMode;
+  setMatchMode: (value: MatchMode) => void;
+  joinAsSpectator: boolean;
+  setJoinAsSpectator: (value: boolean) => void;
   joinCode: string;
   setJoinCode: (value: string) => void;
   onSubmit: (event: FormEvent) => void;
@@ -181,9 +199,15 @@ export function SetupScreen({
         <button className="back-button" type="button" onClick={onBack}>← Back</button>
         <span className="setup-kicker">Fortune Avenue</span><h1>{title}</h1><p>{subtitle}</p>
         {mode === "join" && (
-          <label className="field-label room-code-field"><span>Room code</span><input value={joinCode} onChange={(event) => setJoinCode(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6))} placeholder="ABC234" autoComplete="off" maxLength={6} required /></label>
+          <>
+            <label className="field-label room-code-field"><span>Room code</span><input value={joinCode} onChange={(event) => setJoinCode(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6))} placeholder="ABC234" autoComplete="off" maxLength={6} required /></label>
+            <div><span className="field-heading">How are you joining?</span><div className="join-role-picker">
+              <button type="button" className={!joinAsSpectator ? "is-selected" : ""} onClick={() => setJoinAsSpectator(false)}><KeyRound /><span><strong>Take a seat</strong><small>Join as a player</small></span></button>
+              <button type="button" className={joinAsSpectator ? "is-selected" : ""} onClick={() => setJoinAsSpectator(true)}><Eye /><span><strong>Watch live</strong><small>No player slot needed</small></span></button>
+            </div></div>
+          </>
         )}
-        <label className="field-label"><span>Your display name</span><input value={name} onChange={(event) => setName(event.target.value.slice(0, 24))} placeholder="Avenue legend" required /></label>
+        {!(mode === "join" && joinAsSpectator) && <label className="field-label"><span>Your display name</span><input value={name} onChange={(event) => setName(event.target.value.slice(0, 24))} placeholder="Avenue legend" required /></label>}
         {mode !== "join" && (
           <div className="setup-row">
             <div><span className="field-heading">Total players</span><NumberPicker value={playerCount} onChange={(value) => { setPlayerCount(value); if (botCount > value - 1) setBotCount(value - 1); }} /></div>
@@ -191,14 +215,22 @@ export function SetupScreen({
           </div>
         )}
         {mode !== "join" && (
+          <div><span className="field-heading">Match style</span><div className="match-mode-picker">
+            {(Object.keys(MATCH_MODES) as MatchMode[]).map((value) => {
+              const option = MATCH_MODES[value];
+              return <button type="button" key={value} className={matchMode === value ? "is-selected" : ""} onClick={() => setMatchMode(value)}><span>{option.shortName}</span><strong>{option.name}</strong><small>{option.description}</small></button>;
+            })}
+          </div></div>
+        )}
+        {mode !== "join" && (
           <div><span className="field-heading">Board mood</span><div className="theme-picker">
             <button type="button" className={`theme-choice emerald ${theme === "emerald" ? "is-selected" : ""}`} onClick={() => setTheme("emerald")}><i /> Emerald after dark</button>
             <button type="button" className={`theme-choice crimson ${theme === "crimson" ? "is-selected" : ""}`} onClick={() => setTheme("crimson")}><i /> Crimson fantasy</button>
           </div></div>
         )}
-        <div><span className="field-heading">Choose your resin pawn</span><PawnPicker selected={pawnSlug} onSelect={setPawnSlug} /></div>
+        {!(mode === "join" && joinAsSpectator) && <div><span className="field-heading">Choose your resin pawn</span><PawnPicker selected={pawnSlug} onSelect={setPawnSlug} /></div>}
         {error && <div className="form-error" role="alert">{error}</div>}
-        <button className="gold-button setup-submit" type="submit" disabled={busy || (mode === "join" && joinCode.length !== 6)}>{busy ? "Opening the gates…" : mode === "bots" ? `Start ${playerCount}-player match` : mode === "friends" ? "Create friend room" : "Take my seat"}</button>
+        <button className="gold-button setup-submit" type="submit" disabled={busy || (mode === "join" && joinCode.length !== 6)}>{busy ? "Opening the gates…" : mode === "bots" ? `Start ${playerCount}-player ${MATCH_MODES[matchMode].shortName.toLowerCase()} match` : mode === "friends" ? "Create friend room" : joinAsSpectator ? "Enter viewing gallery" : "Take my seat"}</button>
       </form>
     </main>
   );
@@ -210,7 +242,7 @@ export function LobbyScreen({ state, you, onShare, onStart, onRules, busy }: { s
     <main className={`lobby-screen theme-${state.theme}`}>
       <GoldParticles />
       <section className="lobby-card">
-        <div className="lobby-header"><div><span className="setup-kicker">Persistent friend room</span><h1>The doors are open</h1><p>Leave this page to send the invite if you need to. Your room and seat will still be here when you return.</p></div><button className="glass-button compact" type="button" onClick={onRules}>Rules</button></div>
+        <div className="lobby-header"><div><span className="setup-kicker">Persistent friend room • {MATCH_MODES[state.settings.matchMode].name}</span><h1>The doors are open</h1><p>Leave this page to send the invite if you need to. Your room and seat will still be here when you return.</p></div><button className="glass-button compact" type="button" onClick={onRules}>Rules</button></div>
         <div className="room-code-panel"><span>Quick code</span><strong>{state.code}</strong><button className="gold-button compact" type="button" onClick={onShare}>Send invite</button></div>
         <div className="seat-grid">
           {state.players.map((player, index) => {

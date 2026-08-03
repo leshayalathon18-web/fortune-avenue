@@ -2,6 +2,8 @@ export type BoardTheme = "emerald" | "crimson";
 export type RoomKind = "bots" | "friends";
 export type RoomPhase = "lobby" | "playing" | "finished";
 export type CardDeck = "lucky-break" | "plot-twist";
+export type MatchMode = "classic" | "party" | "grand-finale";
+export type SessionRole = "player" | "spectator";
 
 export type SpaceKind =
   | "corner"
@@ -46,6 +48,15 @@ export interface HeldCard {
   effect: string;
 }
 
+export interface PlayerGameStats {
+  deedsBought: number;
+  auctionsWon: number;
+  tradesCompleted: number;
+  largestFeePaid: number;
+  largestFeeCollected: number;
+  castlesBuilt: number;
+}
+
 export interface PlayerState {
   id: string;
   name: string;
@@ -63,6 +74,7 @@ export interface PlayerState {
   luckyRoll: boolean;
   extraTurns: number;
   rentBoostUntilTurn: number;
+  gameStats?: PlayerGameStats;
 }
 
 export interface PropertyState {
@@ -70,6 +82,7 @@ export interface PropertyState {
   ownerId: string;
   purchasePrice?: number;
   upgrades: number;
+  mortgaged?: boolean;
   closedUntilTurn: number;
   rentMultiplierUntilTurn: number;
   rentDiscountUntilTurn?: number;
@@ -129,6 +142,15 @@ export interface TradeOffer {
   createdTurn: number;
 }
 
+export interface BankruptcyDebt {
+  id: string;
+  playerId: string;
+  creditorId: string | null;
+  originalAmount: number;
+  remainingAmount: number;
+  reason: string;
+}
+
 export interface LandmarkStealChoice {
   playerId: string;
   eligibleSpaceIndexes: number[];
@@ -157,6 +179,7 @@ export type GameEventType =
   | "trade"
   | "rent"
   | "upgrade"
+  | "mortgage"
   | "card"
   | "fortune"
   | "warning"
@@ -176,6 +199,7 @@ export interface GameEvent {
 }
 
 export interface FortuneSettings {
+  matchMode: MatchMode;
   startCash: number;
   passBonus: number;
   targetNetWorth: number;
@@ -204,6 +228,7 @@ export interface FortuneGameState {
   pendingPurchase: number | null;
   auction: AuctionState | null;
   tradeOffer: TradeOffer | null;
+  bankruptcyQueue: BankruptcyDebt[];
   landmarkStealChoice: LandmarkStealChoice | null;
   cardChoice: CardChoice | null;
   luckyDeck: number[];
@@ -234,6 +259,11 @@ export type RoomAction =
   | { type: "steal-landmark"; spaceIndex: number }
   | { type: "resolve-card-choice"; selection: string }
   | { type: "upgrade"; spaceIndex: number }
+  | { type: "sell-upgrade"; spaceIndex: number }
+  | { type: "mortgage"; spaceIndex: number }
+  | { type: "unmortgage"; spaceIndex: number }
+  | { type: "settle-debt" }
+  | { type: "declare-bankruptcy" }
   | { type: "use-card"; cardId: string }
   | { type: "end-turn" };
 
@@ -241,6 +271,7 @@ export interface RoomCredentials {
   roomCode: string;
   playerId: string;
   resumeToken: string;
+  role?: SessionRole;
 }
 
 export interface RoomPayload {
@@ -248,5 +279,23 @@ export interface RoomPayload {
   you: {
     playerId: string;
     isHost: boolean;
+    isSpectator?: boolean;
   } | null;
+}
+
+export interface ProfileCredentials {
+  profileId: string;
+  profileToken: string;
+}
+
+export interface PlayerProfile {
+  id: string;
+  displayName: string;
+  favoritePawnSlug: string;
+  gamesPlayed: number;
+  wins: number;
+  biggestFortune: number;
+  districtsCompleted: number;
+  castlesBuilt: number;
+  achievements: string[];
 }

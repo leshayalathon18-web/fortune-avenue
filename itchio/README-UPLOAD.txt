@@ -6,7 +6,7 @@ Upload the ZIP file exactly as provided. Do not unzip it first.
 Recommended itch.io settings:
 
 1. Kind of project: HTML
-2. Upload: Fortune-Avenue-Itchio-v1.0.0.zip
+2. Upload: Fortune-Avenue-Itchio-v1.1.0.zip
 3. Check: This file will be played in the browser
 4. Embed option: Embed in page
 5. Viewport: 960 × 600

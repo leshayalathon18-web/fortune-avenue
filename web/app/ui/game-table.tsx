@@ -9,15 +9,36 @@ import {
   useState,
 } from "react";
 import Image from "next/image";
-import { ArrowLeftRight, Castle, Check, Coins, Crown, Handshake, X } from "lucide-react";
-import { DISTRICTS, GAME_TAGLINE, LUCKY_CARDS, PAWNS, PLOT_CARDS, SPACE_BY_INDEX, SPACES } from "@/lib/game-data";
+import {
+  ArrowLeftRight,
+  Banknote,
+  Castle,
+  Check,
+  Coins,
+  Crown,
+  Handshake,
+  Landmark,
+  RotateCcw,
+  ShieldAlert,
+  Sparkles,
+  Vibrate,
+  VibrateOff,
+  Volume2,
+  VolumeX,
+  WalletCards,
+  X,
+} from "lucide-react";
+import { DISTRICTS, GAME_TAGLINE, LUCKY_CARDS, MATCH_MODES, PAWNS, PLOT_CARDS, SPACE_BY_INDEX, SPACES } from "@/lib/game-data";
 import {
   currentPlayer,
+  mortgageValue,
   netWorth,
   ownedProperties,
   propertyPostedRent,
   propertyRent,
   propertyRentPauseReason,
+  unmortgageCost,
+  upgradeRefund,
 } from "@/lib/game-engine";
 import {
   isShakeImpulse,
@@ -28,6 +49,8 @@ import {
 } from "@/lib/shake-roll";
 import type { FortuneGameState, GameEvent, PropertyState, RoomAction, SpaceDefinition } from "@/lib/game-types";
 import { GoldParticles, PawnPortrait } from "./shared";
+
+type PlayerView = { playerId: string; isHost: boolean; isSpectator?: boolean };
 
 function money(value: number) {
   return `F${Math.max(0, Math.round(value)).toLocaleString()}`;
@@ -408,18 +431,21 @@ function SpaceTile({
   );
 }
 
-function BoardCenter({ state, you, onAction, busy }: { state: FortuneGameState; you: { playerId: string; isHost: boolean }; onAction: (action: RoomAction) => void; busy: boolean }) {
+function BoardCenter({ state, you, onAction, busy }: { state: FortuneGameState; you: PlayerView; onAction: (action: RoomAction) => void; busy: boolean }) {
   const active = currentPlayer(state);
-  const isYourTurn = active?.id === you.playerId;
+  const isYourTurn = !you.isSpectator && active?.id === you.playerId;
   const pendingSpace = state.pendingPurchase === null ? null : SPACE_BY_INDEX.get(state.pendingPurchase);
   const youPlayer = state.players.find((player) => player.id === you.playerId);
   const luckyCoin = youPlayer?.heldCards.find((card) => card.title === "Lucky Coin");
+  const turnsRemaining = Math.max(0, state.settings.maxTurns - state.turnNumber);
+  const finaleNear = turnsRemaining <= 12 && state.phase === "playing";
   return (
     <section className="board-center">
       <div className="board-center-brand"><span>Fortune</span><span>Avenue</span><small>{GAME_TAGLINE}</small></div>
       <div className="deck-pile lucky-pile" aria-label="Lucky Break deck"><i /><span>Lucky<br />Break</span></div>
       <div className="deck-pile plot-pile" aria-label="Plot Twist deck"><i /><span>Plot<br />Twist</span></div>
       <div className={`turn-console ${isYourTurn ? "is-yours" : ""}`}>
+        <div className={`match-status ${finaleNear ? "is-final-countdown" : ""}`}><span>{MATCH_MODES[state.settings.matchMode].shortName}</span><small>{state.settings.matchMode === "grand-finale" || finaleNear ? `${turnsRemaining} turns to closing bell` : `${state.settings.requiredProperties} deeds + ${money(state.settings.targetNetWorth)} to win`}</small></div>
         <span className="turn-label">{state.phase === "finished" ? "Final fortune" : isYourTurn ? "Your turn" : `${active?.name ?? "Avenue"}'s turn`}</span>
         {active && <div className="turn-player"><PawnPortrait pawn={pawnBySlug(active.pawnSlug)} /><div><strong>{active.name}</strong><small>Round {state.roundNumber} • Turn {state.turnNumber}</small></div></div>}
         <ShakeDiceControl
@@ -436,7 +462,7 @@ function BoardCenter({ state, you, onAction, busy }: { state: FortuneGameState; 
             {pendingSpace && <div className="purchase-prompt"><strong>{pendingSpace.name}</strong><span>Claim for {money(Math.max(0, pendingSpace.price - (youPlayer?.purchaseDiscount ?? 0)))}</span><div><button type="button" className="mini-action buy-action" disabled={busy} onClick={() => onAction({ type: "buy" })}>Buy deed</button><button type="button" className="mini-action auction-action" disabled={busy} onClick={() => onAction({ type: "start-auction" })}>Auction</button><button type="button" className="mini-action skip-auction-action" disabled={busy} onClick={() => onAction({ type: "skip-purchase" })}>Skip auction</button></div></div>}
             {state.rolled && !pendingSpace && !state.auction && <button className="end-turn-button" type="button" disabled={busy} onClick={() => onAction({ type: "end-turn" })}>End turn</button>}
           </div>
-        ) : <div className="waiting-turn"><i /> The table will update automatically</div>}
+        ) : <div className="waiting-turn"><i /> {you.isSpectator ? "Watching live • the table updates automatically" : "The table will update automatically"}</div>}
       </div>
     </section>
   );
@@ -506,7 +532,7 @@ function AuctionHouse({
 
 function tradeLocked(state: FortuneGameState, playerId: string, space: SpaceDefinition) {
   const property = state.properties[String(space.index)];
-  if (!property || property.upgrades > 0) return Boolean(property?.upgrades);
+  if (!property || property.upgrades > 0 || property.mortgaged) return Boolean(property?.upgrades || property?.mortgaged);
   if (space.district === null) return false;
   return ownedProperties(state, playerId).some((owned) => (
     owned.upgrades > 0 && SPACE_BY_INDEX.get(owned.spaceIndex)?.district === space.district
@@ -542,11 +568,11 @@ function TradeDeedPicker({
             type="button"
             disabled={locked}
             aria-pressed={checked}
-            title={locked ? "Crowns and castles lock this color set until the improvements are removed." : `Add ${space.name} to the offer`}
+            title={locked ? "Crowns, castles, and mortgages must be cleared before a deed can be traded." : `Add ${space.name} to the offer`}
             onClick={() => onToggle(space.index)}
           >
             <span className="trade-deed-art" style={{ backgroundImage: `url(${space.asset})` }} />
-            <span><strong>{space.name}</strong><small>{locked ? "Crowned district - locked" : `${money(space.price)} deed`}</small></span>
+            <span><strong>{space.name}</strong><small>{locked ? "Portfolio locked" : `${money(space.price)} deed`}</small></span>
             <i aria-hidden="true">{checked ? <Check /> : null}</i>
           </button>
         );
@@ -561,17 +587,21 @@ function TradeBuilder({
   onAction,
   onClose,
   busy,
+  initialOfferedSpaceIndex,
 }: {
   state: FortuneGameState;
   youId: string;
   onAction: (action: RoomAction) => void;
   onClose: () => void;
   busy: boolean;
+  initialOfferedSpaceIndex?: number | null;
 }) {
   const youPlayer = state.players.find((player) => player.id === youId);
   const recipients = state.players.filter((player) => player.id !== youId && !player.bankrupt);
   const [targetId, setTargetId] = useState(recipients[0]?.id ?? "");
-  const [offeredSpaces, setOfferedSpaces] = useState<number[]>([]);
+  const [offeredSpaces, setOfferedSpaces] = useState<number[]>(
+    initialOfferedSpaceIndex === null || initialOfferedSpaceIndex === undefined ? [] : [initialOfferedSpaceIndex],
+  );
   const [requestedSpaces, setRequestedSpaces] = useState<number[]>([]);
   const [offeredCash, setOfferedCash] = useState(0);
   const [requestedCash, setRequestedCash] = useState(0);
@@ -859,6 +889,170 @@ export function CashCollection({
   );
 }
 
+function DeedManager({
+  state,
+  playerId,
+  interactive,
+  onAction,
+  onTrade,
+  onClose,
+  busy,
+  initialSpaceIndex,
+}: {
+  state: FortuneGameState;
+  playerId: string;
+  interactive: boolean;
+  onAction: (action: RoomAction) => void;
+  onTrade: (spaceIndex: number) => void;
+  onClose: () => void;
+  busy: boolean;
+  initialSpaceIndex?: number | null;
+}) {
+  const player = state.players.find((candidate) => candidate.id === playerId);
+  const deeds = ownedProperties(state, playerId)
+    .flatMap((property) => {
+      const space = SPACE_BY_INDEX.get(property.spaceIndex);
+      return space ? [{ property, space }] : [];
+    })
+    .sort((a, b) => a.space.index - b.space.index);
+  const [selectedIndex, setSelectedIndex] = useState(initialSpaceIndex ?? deeds[0]?.space.index ?? -1);
+  const selected = deeds.find((entry) => entry.space.index === selectedIndex) ?? deeds[0] ?? null;
+  const activeDebt = state.bankruptcyQueue[0];
+  const rescueMode = activeDebt?.playerId === playerId;
+  const active = currentPlayer(state);
+  const tableClear = state.pendingPurchase === null
+    && !state.auction
+    && !state.tradeOffer
+    && !state.cardChoice
+    && !state.landmarkStealChoice;
+  const canManage = interactive
+    && state.phase === "playing"
+    && ((rescueMode && activeDebt?.playerId === playerId) || (active?.id === playerId && tableClear && state.bankruptcyQueue.length === 0));
+  const property = selected?.property;
+  const space = selected?.space;
+  const fullDistrict = space ? ownsFullDistrict(state, playerId, space.district) : false;
+  const districtMortgaged = space?.district === null || space?.district === undefined ? false : SPACES.some((candidate) => (
+    candidate.district === space.district
+    && state.properties[String(candidate.index)]?.ownerId === playerId
+    && state.properties[String(candidate.index)]?.mortgaged
+  ));
+  const districtImproved = space?.district === null || space?.district === undefined ? false : ownedProperties(state, playerId).some((owned) => (
+    owned.upgrades > 0 && SPACE_BY_INDEX.get(owned.spaceIndex)?.district === space.district
+  ));
+  const buildCost = space ? Math.max(0, space.upgradeCost - (player?.upgradeDiscount ?? 0)) : 0;
+  const ladder = property && space?.kind === "landmark"
+    ? [0, 1, 2, 3].map((upgrades) => propertyPostedRent(state, { ...property, upgrades }, 7))
+    : [];
+  const canTrade = Boolean(space && canManage && !tradeLocked(state, playerId, space) && state.players.some((candidate) => candidate.id !== playerId && !candidate.bankrupt));
+  return (
+    <div className="modal-backdrop deed-manager-backdrop" role="presentation" onMouseDown={onClose}>
+      <section className="deed-manager" role="dialog" aria-modal="true" aria-labelledby="deed-manager-title" onMouseDown={(event) => event.stopPropagation()}>
+        <header className="deed-manager-header">
+          <div><span>{interactive ? "Your property office" : `${player?.name ?? "Player"}’s property office`}</span><h2 id="deed-manager-title">Manage deeds</h2><p>{rescueMode ? `Raise cash to cover ${money(activeDebt?.remainingAmount ?? 0)}.` : "Inspect every fee, build, mortgage, sale, and trade option."}</p></div>
+          <button type="button" onClick={onClose} aria-label="Close deed manager"><X /></button>
+        </header>
+        {deeds.length === 0 ? <div className="deed-manager-empty"><Landmark /><strong>No deeds in this portfolio yet.</strong><p>Available landmarks are still waiting around the board.</p></div> : (
+          <div className="deed-manager-layout">
+            <nav className="deed-manager-list" aria-label="Choose a deed to manage">
+              {deeds.map((entry) => <button type="button" key={entry.space.index} className={`${entry.space.index === selected?.space.index ? "is-selected" : ""} ${entry.property.mortgaged ? "is-mortgaged" : ""}`} style={{ "--district-color": entry.space.districtColor } as CSSProperties} onClick={() => setSelectedIndex(entry.space.index)}><span style={{ backgroundImage: `url(${entry.space.asset})` }} /><div><strong>{entry.space.name}</strong><small>{entry.property.mortgaged ? "Mortgaged • fee paused" : entry.property.upgrades === 3 ? "Castle built" : entry.property.upgrades ? `${entry.property.upgrades} ${entry.property.upgrades === 1 ? "crown" : "crowns"}` : money(entry.space.price)}</small></div><i>{entry.property.mortgaged ? <Banknote /> : entry.property.upgrades === 3 ? <Castle /> : <Landmark />}</i></button>)}
+            </nav>
+            {property && space && <article className="deed-manager-detail" style={{ "--district-color": space.districtColor } as CSSProperties}>
+              <div className="deed-manager-art" style={{ backgroundImage: `url(${space.asset})` }}><span>{space.districtName ?? (space.kind === "transport" ? "Transportation" : "Avenue service")}</span>{property.mortgaged && <b><Banknote /> Mortgaged</b>}</div>
+              <div className="deed-manager-copy">
+                <span className="deed-manager-kicker">Space {space.index} • Owned by {player?.name}</span>
+                <h3>{space.name}</h3>
+                <div className="deed-manager-facts">
+                  <span><small>Deed value</small><strong>{money(space.price)}</strong></span>
+                  <span><small>Mortgage</small><strong>{money(mortgageValue(space))}</strong></span>
+                  <span><small>Reopen</small><strong>{money(unmortgageCost(space))}</strong></span>
+                  <span><small>Net worth value</small><strong>{money(property.mortgaged ? mortgageValue(space) : space.price + property.upgrades * Math.round(space.upgradeCost * 0.8))}</strong></span>
+                </div>
+                {space.kind === "landmark" ? <div className="fee-ladder"><div><span>Entry-fee ladder</span><small>{fullDistrict ? "District owned" : `Complete ${space.districtName} to unlock building`}</small></div><div>{ladder.map((fee, level) => <span key={level} className={property.upgrades === level ? "is-current" : ""}><i>{level === 0 ? <Landmark /> : level === 3 ? <Castle /> : <Crown />}</i><small>{level === 0 ? "Base" : level === 3 ? "Castle" : `Crown ${level}`}</small><strong>{money(fee)}</strong></span>)}</div></div> : <div className="fee-ladder single-fee"><div><span>Current entry fee</span><small>{space.kind === "service" ? "Service fees use the visitor’s dice total." : "Transportation fees rise as the owner collects routes."}</small></div><strong>{space.kind === "service" ? "Dice based" : money(propertyPostedRent(state, property, 7))}</strong></div>}
+                <div className="deed-manager-actions">
+                  {space.kind === "landmark" && property.upgrades < 3 && <button type="button" className="deed-build-action" disabled={busy || !canManage || !fullDistrict || districtMortgaged || property.mortgaged || (player?.cash ?? 0) < buildCost} onClick={() => onAction({ type: "upgrade", spaceIndex: space.index })}><Crown /><span><strong>{property.upgrades === 2 ? "Raise castle" : "Add crown"}</strong><small>{money(buildCost)}</small></span></button>}
+                  {space.kind === "landmark" && property.upgrades > 0 && <button type="button" className="deed-sell-action" disabled={busy || !canManage} onClick={() => onAction({ type: "sell-upgrade", spaceIndex: space.index })}><RotateCcw /><span><strong>{property.upgrades === 3 ? "Sell castle" : "Sell one crown"}</strong><small>Collect {money(upgradeRefund(space))}</small></span></button>}
+                  {property.mortgaged ? <button type="button" className="deed-reopen-action" disabled={busy || !canManage || rescueMode || (player?.cash ?? 0) < unmortgageCost(space)} onClick={() => onAction({ type: "unmortgage", spaceIndex: space.index })}><Sparkles /><span><strong>Reopen deed</strong><small>Pay {money(unmortgageCost(space))}</small></span></button> : <button type="button" className="deed-mortgage-action" disabled={busy || !canManage || property.upgrades > 0 || districtImproved} onClick={() => onAction({ type: "mortgage", spaceIndex: space.index })}><Banknote /><span><strong>Mortgage deed</strong><small>Collect {money(mortgageValue(space))}</small></span></button>}
+                  <button type="button" className="deed-trade-action" disabled={busy || !canTrade} onClick={() => onTrade(space.index)}><Handshake /><span><strong>Trade this deed</strong><small>Start with it in your offer</small></span></button>
+                </div>
+                {!canManage && interactive && <p className="deed-manager-lock-note">Portfolio actions open on your turn after the current card, purchase, auction, or trade is finished.</p>}
+              </div>
+            </article>}
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function BankruptcyRescue({
+  state,
+  you,
+  onAction,
+  onTrade,
+  busy,
+}: {
+  state: FortuneGameState;
+  you: PlayerView;
+  onAction: (action: RoomAction) => void;
+  onTrade: () => void;
+  busy: boolean;
+}) {
+  const debt = state.bankruptcyQueue[0];
+  if (!debt) return null;
+  const debtor = state.players.find((player) => player.id === debt.playerId);
+  if (!debtor) return null;
+  const creditor = debt.creditorId ? state.players.find((player) => player.id === debt.creditorId) : null;
+  const isDebtor = you.playerId === debtor.id && !you.isSpectator;
+  const assets = ownedProperties(state, debtor.id).flatMap((property) => {
+    const space = SPACE_BY_INDEX.get(property.spaceIndex);
+    return space ? [{ property, space }] : [];
+  });
+  const improvements = assets.filter((entry) => entry.property.upgrades > 0);
+  const mortgageable = assets.filter((entry) => !entry.property.mortgaged && entry.property.upgrades === 0 && !tradeLocked(state, debtor.id, entry.space));
+  const canSettle = debtor.cash >= debt.remainingAmount;
+  return (
+    <div className="rescue-backdrop" role="presentation">
+      <section className="rescue-house" role="dialog" aria-modal="true" aria-labelledby="rescue-title">
+        <header><span className="rescue-icon"><ShieldAlert /></span><div><span>Bankruptcy rescue • {state.bankruptcyQueue.length} decision{state.bankruptcyQueue.length === 1 ? "" : "s"} waiting</span><h2 id="rescue-title">{debtor.name} needs a comeback</h2><p>{debt.reason}{creditor ? ` • owed to ${creditor.name}` : " • owed to the Avenue"}</p></div></header>
+        <div className="rescue-balance"><span><small>Still owed</small><strong>{money(debt.remainingAmount)}</strong></span><i /><span><small>Cash ready</small><strong>{money(debtor.cash)}</strong></span></div>
+        {isDebtor ? <>
+          <p className="rescue-instruction">Raise the balance without losing your seat. Sell improvements first, mortgage clear deeds, or negotiate a cash trade.</p>
+          <div className="rescue-assets">
+            {improvements.map(({ property, space }) => <button type="button" key={`sell-${space.index}`} disabled={busy} onClick={() => onAction({ type: "sell-upgrade", spaceIndex: space.index })}><span style={{ backgroundImage: `url(${space.asset})` }} /><div><strong>{property.upgrades === 3 ? "Sell castle" : `Sell crown at ${space.name}`}</strong><small>Collect {money(upgradeRefund(space))}</small></div><RotateCcw /></button>)}
+            {mortgageable.map(({ space }) => <button type="button" key={`mortgage-${space.index}`} disabled={busy} onClick={() => onAction({ type: "mortgage", spaceIndex: space.index })}><span style={{ backgroundImage: `url(${space.asset})` }} /><div><strong>Mortgage {space.name}</strong><small>Collect {money(mortgageValue(space))}</small></div><Banknote /></button>)}
+            {improvements.length === 0 && mortgageable.length === 0 && <div className="rescue-no-assets"><WalletCards /><span><strong>No liquid property remains.</strong><small>A trade may still save the seat.</small></span></div>}
+          </div>
+          <div className="rescue-actions">
+            <button className="rescue-trade" type="button" disabled={busy || !state.players.some((player) => player.id !== debtor.id && !player.bankrupt)} onClick={onTrade}><Handshake /> Ask for a trade</button>
+            <button className="rescue-settle" type="button" disabled={busy || !canSettle} onClick={() => onAction({ type: "settle-debt" })}><Coins /> Settle {money(debt.remainingAmount)}</button>
+            <button className="rescue-bankrupt" type="button" disabled={busy} onClick={() => onAction({ type: "declare-bankruptcy" })}>Declare bankruptcy</button>
+          </div>
+        </> : <div className="rescue-waiting"><PawnPortrait pawn={pawnBySlug(debtor.pawnSlug)} /><span><strong>{debtor.name} is working the vault.</strong><small>The table resumes when the debt is settled or bankruptcy is declared.</small></span><i /></div>}
+      </section>
+    </div>
+  );
+}
+
+function PawnReaction({ state, event }: { state: FortuneGameState; event: GameEvent }) {
+  if (event.title === "Castle crowned" && event.playerId) {
+    const player = state.players.find((candidate) => candidate.id === event.playerId);
+    if (!player) return null;
+    return <div className="pawn-reaction reaction-castle" role="status"><span className="reaction-rays" /><PawnPortrait pawn={pawnBySlug(player.pawnSlug)} /><div><Crown /><strong>{player.name} raised a castle!</strong><small>The whole district just got expensive.</small></div></div>;
+  }
+  if (event.type === "rent" && (event.moneyTransfer?.amount ?? 0) >= 150) {
+    const payer = state.players.find((player) => player.id === event.moneyTransfer?.fromPlayerId);
+    const collector = state.players.find((player) => player.id === event.moneyTransfer?.toPlayerId);
+    if (!payer || !collector) return null;
+    return <div className="pawn-reaction reaction-rent" role="status"><PawnPortrait pawn={pawnBySlug(payer.pawnSlug)} /><div><Coins /><strong>{money(event.moneyTransfer?.amount ?? 0)} mega fee!</strong><small>{payer.name} paid {collector.name}. The vault is screaming.</small></div><PawnPortrait pawn={pawnBySlug(collector.pawnSlug)} /></div>;
+  }
+  if (event.title === "Deal accepted" && event.playerId) {
+    const player = state.players.find((candidate) => candidate.id === event.playerId);
+    if (!player) return null;
+    return <div className="pawn-reaction reaction-trade" role="status"><PawnPortrait pawn={pawnBySlug(player.pawnSlug)} /><div><Handshake /><strong>Deal locked!</strong><small>{player.name} changed the map.</small></div></div>;
+  }
+  return null;
+}
+
 function PlayerRail({ state, youId }: { state: FortuneGameState; youId: string }) {
   const active = currentPlayer(state);
   return (
@@ -871,23 +1065,19 @@ function PlayerRail({ state, youId }: { state: FortuneGameState; youId: string }
   );
 }
 
-function DeedPanel({ state, playerId, onUpgrade, busy }: { state: FortuneGameState; playerId: string; onUpgrade: (spaceIndex: number) => void; busy: boolean }) {
-  const player = state.players.find((candidate) => candidate.id === playerId);
+function DeedPanel({ state, playerId, onManage, busy, title = "Your portfolio" }: { state: FortuneGameState; playerId: string; onManage: (spaceIndex?: number) => void; busy: boolean; title?: string }) {
   const deeds = ownedProperties(state, playerId).flatMap((property) => {
     const space = SPACE_BY_INDEX.get(property.spaceIndex);
     return space ? [{ property, space }] : [];
   });
   return (
     <section className="deed-panel">
-      <div className="panel-heading"><span>Your portfolio</span><b>{deeds.length} deeds</b></div>
+      <div className="panel-heading"><span>{title}</span><b>{deeds.length} deeds</b><button type="button" disabled={busy} onClick={() => onManage()}><WalletCards /> Manage</button></div>
       {deeds.length === 0 ? <div className="empty-deeds">Your first ridiculous landmark is still waiting.</div> : (
         <div className="deed-list">{deeds.map(({ property, space }) => {
-          const cost = Math.max(0, space.upgradeCost - (player?.upgradeDiscount ?? 0));
           const hasDistrict = ownsFullDistrict(state, playerId, space.district);
-          const canUpgrade = space.kind === "landmark" && hasDistrict && property.upgrades < 3 && (player?.cash ?? 0) >= cost;
           const nextFee = propertyPostedRent(state, { ...property, upgrades: Math.min(3, property.upgrades + 1) }, 7);
-          const buildLabel = property.upgrades === 2 ? "Castle" : "Crown";
-          return <article className={`deed-row ${hasDistrict ? "has-district" : ""}`} key={space.index} style={{ "--district-color": space.districtColor } as CSSProperties}><span className="deed-art" style={{ backgroundImage: `url(${space.asset})` }} /><div><strong>{space.name}</strong><span className="deed-builds" aria-label={property.upgrades === 3 ? "Castle built" : `${property.upgrades} crowns`}>{property.upgrades === 3 ? <Castle /> : Array.from({ length: property.upgrades }, (_, index) => <Crown key={index} />)}</span><small>{property.upgrades === 3 ? propertyFeeCopy(state, property, "Castle fee") : hasDistrict ? `${property.upgrades === 0 ? "District complete" : `${property.upgrades} ${property.upgrades === 1 ? "crown" : "crowns"}`} • next fee ${money(nextFee)}` : space.kind === "landmark" ? `Complete ${space.districtName} to add crowns` : propertyFeeCopy(state, property, "Entry fee")}</small></div>{space.kind === "landmark" && property.upgrades < 3 && <button type="button" className={!hasDistrict ? "is-locked" : ""} title={!hasDistrict ? `Own every ${space.districtName} landmark first` : `Add ${buildLabel.toLowerCase()} for ${money(cost)}`} disabled={busy || !canUpgrade || currentPlayer(state)?.id !== playerId} onClick={() => onUpgrade(space.index)}>{hasDistrict ? `${buildLabel} ${money(cost)}` : "Need set"}</button>}</article>;
+          return <article className={`deed-row ${hasDistrict ? "has-district" : ""} ${property.mortgaged ? "is-mortgaged" : ""}`} key={space.index} style={{ "--district-color": space.districtColor } as CSSProperties}><span className="deed-art" style={{ backgroundImage: `url(${space.asset})` }} /><div><strong>{space.name}</strong><span className="deed-builds" aria-label={property.mortgaged ? "Mortgaged deed" : property.upgrades === 3 ? "Castle built" : `${property.upgrades} crowns`}>{property.mortgaged ? <Banknote /> : property.upgrades === 3 ? <Castle /> : Array.from({ length: property.upgrades }, (_, index) => <Crown key={index} />)}</span><small>{property.mortgaged ? `Mortgaged for ${money(mortgageValue(space))} • entry fee paused` : property.upgrades === 3 ? propertyFeeCopy(state, property, "Castle fee") : hasDistrict ? `${property.upgrades === 0 ? "District complete" : `${property.upgrades} ${property.upgrades === 1 ? "crown" : "crowns"}`} • next fee ${money(nextFee)}` : space.kind === "landmark" ? `Complete ${space.districtName} to add crowns` : propertyFeeCopy(state, property, "Entry fee")}</small></div><button type="button" disabled={busy} onClick={() => onManage(space.index)}>Manage</button></article>;
         })}</div>
       )}
     </section>
@@ -913,7 +1103,7 @@ function SpaceInspector({ space, state, onClose }: { space: SpaceDefinition; sta
     <div className="modal-backdrop inspector-backdrop" role="presentation" onMouseDown={onClose}>
       <section className="space-inspector" role="dialog" aria-modal="true" aria-labelledby="space-title" onMouseDown={(event) => event.stopPropagation()}>
         <button className="modal-close" type="button" onClick={onClose} aria-label="Close landmark details">×</button><div className="inspector-art" style={{ backgroundImage: `url(${space.asset})` }} /><div className="inspector-copy"><span className="inspector-kicker">Space {space.index} • {space.districtName ?? space.kind}</span><h2 id="space-title">{space.name}</h2>
-          {space.price > 0 ? <div className="inspector-stats"><span><small>{property ? "Estate value" : "Deed"}</small><strong>{money(space.price + (property?.upgrades ?? 0) * space.upgradeCost)}</strong></span><span className={feeStatus ? "has-fee-status" : ""}><small>Posted entry fee</small><strong>{space.kind === "service" ? "Dice based" : money(postedFee)}</strong>{feeStatus && <em>{feeStatus}</em>}</span><span><small>Owner</small><strong>{owner?.name ?? "Available"}</strong></span><span><small>Build</small><strong>{property?.upgrades === 3 ? "Castle" : property?.upgrades ? `${property.upgrades} ${property.upgrades === 1 ? "crown" : "crowns"}` : "No crowns"}</strong></span></div> : <p className="inspector-effect">{space.kind === "lucky" ? "Draw a Lucky Break and let fortune show off." : space.kind === "plot" ? "Draw a Plot Twist and brace for nonsense." : space.index === 20 ? "Pay F60 in mysterious municipal fees." : space.index === 30 ? "Collect F90 from the festival crowd." : space.index === 10 ? "Usually just visiting—unless a card strands you here." : "Collect F200 whenever you pass this gold marquee."}</p>}
+          {space.price > 0 ? <div className="inspector-stats"><span><small>{property ? "Estate value" : "Deed"}</small><strong>{money(property?.mortgaged ? mortgageValue(space) : space.price + (property?.upgrades ?? 0) * space.upgradeCost)}</strong></span><span className={feeStatus ? "has-fee-status" : ""}><small>Posted entry fee</small><strong>{space.kind === "service" ? "Dice based" : money(postedFee)}</strong>{feeStatus && <em>{feeStatus}</em>}</span><span><small>Owner</small><strong>{owner?.name ?? "Available"}</strong></span><span><small>Build</small><strong>{property?.mortgaged ? "Mortgaged" : property?.upgrades === 3 ? "Castle" : property?.upgrades ? `${property.upgrades} ${property.upgrades === 1 ? "crown" : "crowns"}` : "No crowns"}</strong></span></div> : <p className="inspector-effect">{space.kind === "lucky" ? "Draw a Lucky Break and let fortune show off." : space.kind === "plot" ? "Draw a Plot Twist and brace for nonsense." : space.index === 20 ? "Pay F60 in mysterious municipal fees." : space.index === 30 ? "Collect F90 from the festival crowd." : space.index === 10 ? "Usually just visiting—unless a card strands you here." : "Collect F200 whenever you pass this gold marquee."}</p>}
           {space.district !== null && <span className="district-tag" style={{ backgroundColor: space.districtColor }}>{DISTRICTS[space.district]}</span>}
         </div>
       </section>
@@ -929,11 +1119,45 @@ export function CardReveal({ event, drawerName, onClose }: { event: GameEvent; d
 function WinnerReveal({ state, onRules }: { state: FortuneGameState; onRules: () => void }) {
   const winner = state.players.find((player) => player.id === state.winnerId);
   if (!winner) return null;
-  return <div className="winner-overlay"><GoldParticles /><section className="winner-card"><span className="winner-crown">♛</span><span className="setup-kicker">Fortune crowned</span><PawnPortrait pawn={pawnBySlug(winner.pawnSlug)} label={`${winner.name}'s winning pawn`} /><h2>{winner.name}</h2><p>{money(netWorth(state, winner.id))} net worth • {ownedProperties(state, winner.id).length} deeds</p><div className="winner-actions"><button className="glass-button compact" type="button" onClick={onRules}>Review rules</button><button className="gold-button compact" type="button" onClick={() => window.location.assign(window.location.pathname)}>New game</button></div></section></div>;
+  return <div className="winner-overlay"><GoldParticles /><section className="winner-card"><span className="winner-crown">♛</span><span className="setup-kicker">{MATCH_MODES[state.settings.matchMode].name} • Fortune crowned</span><div className="pawn-victory-stage"><i /><i /><i /><PawnPortrait pawn={pawnBySlug(winner.pawnSlug)} label={`${winner.name}'s winning pawn`} /><Crown /></div><h2>{winner.name}</h2><p>{money(netWorth(state, winner.id))} net worth • {ownedProperties(state, winner.id).length} deeds • {winner.gameStats?.castlesBuilt ?? 0} castles raised</p><div className="winner-actions"><button className="glass-button compact" type="button" onClick={onRules}>Review rules</button><button className="gold-button compact" type="button" onClick={() => window.location.assign(window.location.pathname)}>New game</button></div></section></div>;
 }
 
-export function GameScreen({ state, you, onAction, onShare, onRules, onHome, busy, muted, onToggleMuted, onMotionChange, selectedSpace, setSelectedSpace }: { state: FortuneGameState; you: { playerId: string; isHost: boolean }; onAction: (action: RoomAction) => void; onShare: () => void; onRules: () => void; onHome: () => void; busy: boolean; muted: boolean; onToggleMuted: () => void; onMotionChange: (moving: boolean) => void; selectedSpace: SpaceDefinition | null; setSelectedSpace: (space: SpaceDefinition | null) => void }) {
+export function GameScreen({
+  state,
+  you,
+  onAction,
+  onShare,
+  onRules,
+  onHome,
+  busy,
+  muted,
+  onToggleMuted,
+  haptics,
+  onToggleHaptics,
+  onMotionChange,
+  selectedSpace,
+  setSelectedSpace,
+}: {
+  state: FortuneGameState;
+  you: PlayerView;
+  onAction: (action: RoomAction) => void;
+  onShare: () => void;
+  onRules: () => void;
+  onHome: () => void;
+  busy: boolean;
+  muted: boolean;
+  onToggleMuted: () => void;
+  haptics: boolean;
+  onToggleHaptics: () => void;
+  onMotionChange: (moving: boolean) => void;
+  selectedSpace: SpaceDefinition | null;
+  setSelectedSpace: (space: SpaceDefinition | null) => void;
+}) {
   const [tradeOpen, setTradeOpen] = useState(false);
+  const [tradeSeedSpace, setTradeSeedSpace] = useState<number | null>(null);
+  const [managerOpen, setManagerOpen] = useState(false);
+  const [managerSpace, setManagerSpace] = useState<number | null>(null);
+  const [reactionEvent, setReactionEvent] = useState<GameEvent | null>(null);
   const [displayPositions, setDisplayPositions] = useState<Record<string, number>>(
     () => Object.fromEntries(state.players.map((player) => [player.id, player.position])),
   );
@@ -1023,6 +1247,19 @@ export function GameScreen({ state, you, onAction, onShare, onRules, onHome, bus
     if (movementTimer.current !== null) window.clearTimeout(movementTimer.current);
   }, []);
 
+  useEffect(() => {
+    const event = state.lastEvent;
+    const showReaction = event && (
+      event.title === "Castle crowned"
+      || event.title === "Deal accepted"
+      || (event.type === "rent" && (event.moneyTransfer?.amount ?? 0) >= 150)
+    );
+    if (!showReaction) return;
+    setReactionEvent(event);
+    const timer = window.setTimeout(() => setReactionEvent((current) => current?.id === event.id ? null : current), 3100);
+    return () => window.clearTimeout(timer);
+  }, [state.lastEvent]);
+
   const movingPlayerId = movementView?.event.playerId ?? null;
   const movingPlayer = state.players.find((player) => player.id === movingPlayerId);
   const remainingSteps = movementView?.event.movement
@@ -1030,7 +1267,10 @@ export function GameScreen({ state, you, onAction, onShare, onRules, onHome, bus
     : 0;
   const controlsBusy = busy || motionBusy;
   const active = currentPlayer(state);
-  const canOpenTrade = state.phase === "playing"
+  const activeDebt = state.bankruptcyQueue[0];
+  const viewedPlayerId = you.isSpectator ? active?.id ?? state.hostPlayerId : you.playerId;
+  const viewedPlayer = state.players.find((player) => player.id === viewedPlayerId);
+  const canOpenTrade = !you.isSpectator && state.phase === "playing"
     && active?.id === you.playerId
     && !active.bankrupt
     && state.pendingPurchase === null
@@ -1038,18 +1278,32 @@ export function GameScreen({ state, you, onAction, onShare, onRules, onHome, bus
     && !state.tradeOffer
     && !state.cardChoice
     && !state.landmarkStealChoice
+    && state.bankruptcyQueue.length === 0
     && state.players.some((player) => player.id !== you.playerId && !player.bankrupt);
+  const openTrade = (spaceIndex: number | null = null) => {
+    setManagerOpen(false);
+    setTradeSeedSpace(spaceIndex);
+    setTradeOpen(true);
+  };
+  const openManager = (spaceIndex: number | null = null) => {
+    setTradeOpen(false);
+    setManagerSpace(spaceIndex);
+    setManagerOpen(true);
+  };
   return (
     <main className={`game-screen theme-${state.theme}`}>
-      <header className="game-topbar"><button className="mini-logo" type="button" onClick={onHome} aria-label="Return to menu"><Image src="/app-icon-192.png" width={34} height={34} alt="" unoptimized /> Fortune Avenue</button><div className="topbar-room"><span>Room</span><strong>{state.code}</strong><i>{state.kind === "friends" ? "Friends" : "Bot match"}</i></div><div className="topbar-actions"><button type="button" onClick={onToggleMuted}>{muted ? "Sound off" : "Sound on"}</button><button type="button" onClick={onRules}>Rules</button><button className="trade-topbar" type="button" disabled={!canOpenTrade || controlsBusy} title={!canOpenTrade ? "Trade on your turn after resolving the current space." : "Open the Avenue trade table"} onClick={() => setTradeOpen(true)}><Handshake /> Trade</button><button className="invite-topbar" type="button" onClick={onShare}>Invite</button></div></header>
+      <header className="game-topbar"><button className="mini-logo" type="button" onClick={onHome} aria-label="Return to menu"><Image src="/app-icon-192.png" width={34} height={34} alt="" unoptimized /> Fortune Avenue</button><div className="topbar-room"><span>{you.isSpectator ? "Watching room" : "Room"}</span><strong>{state.code}</strong><i>{you.isSpectator ? "Spectator" : MATCH_MODES[state.settings.matchMode].shortName}</i></div><div className="topbar-actions"><button className="topbar-icon-action" type="button" onClick={onToggleMuted} aria-label={muted ? "Turn sound on" : "Turn sound off"} title={muted ? "Sound off" : "Sound on"}>{muted ? <VolumeX /> : <Volume2 />}</button><button className="topbar-icon-action" type="button" onClick={onToggleHaptics} aria-label={haptics ? "Turn haptics off" : "Turn haptics on"} title={haptics ? "Haptics on" : "Haptics off"}>{haptics ? <Vibrate /> : <VibrateOff />}</button><button type="button" onClick={onRules}>Rules</button><button type="button" onClick={() => openManager()}><WalletCards /> Deeds</button><button className="trade-topbar" type="button" disabled={!canOpenTrade || controlsBusy} title={!canOpenTrade ? "Trade on your turn after resolving the current space." : "Open the Avenue trade table"} onClick={() => openTrade()}><Handshake /> Trade</button><button className="invite-topbar" type="button" onClick={onShare}>Invite</button></div></header>
       <PlayerRail state={state} youId={you.playerId} />
-      <div className="game-layout"><section className="board-shell"><div className="board-glow" />{movementView && movingPlayer && <div className="movement-banner" role="status"><PawnPortrait pawn={pawnBySlug(movingPlayer.pawnSlug)} /><span><strong>{movingPlayer.name} is cruising the Avenue</strong><small>{remainingSteps > 0 ? `${remainingSteps} ${remainingSteps === 1 ? "space" : "spaces"} to go` : "Arriving now"}</small></span><i /></div>}<div className="game-board" aria-label="Fortune Avenue game board">{SPACES.map((space) => <SpaceTile key={space.index} space={space} state={state} displayPositions={displayPositions} movingPlayerId={movingPlayerId} onSelect={setSelectedSpace} />)}<BoardCenter state={state} you={you} onAction={onAction} busy={controlsBusy} /></div></section><aside className="game-sidebar"><DeedPanel state={state} playerId={you.playerId} onUpgrade={(spaceIndex) => onAction({ type: "upgrade", spaceIndex })} busy={controlsBusy} /><EventLog state={state} /></aside></div>
+      <div className="game-layout"><section className="board-shell"><div className="board-glow" />{movementView && movingPlayer && <div className="movement-banner" role="status"><PawnPortrait pawn={pawnBySlug(movingPlayer.pawnSlug)} /><span><strong>{movingPlayer.name} is cruising the Avenue</strong><small>{remainingSteps > 0 ? `${remainingSteps} ${remainingSteps === 1 ? "space" : "spaces"} to go` : "Arriving now"}</small></span><i /></div>}<div className="game-board" aria-label="Fortune Avenue game board">{SPACES.map((space) => <SpaceTile key={space.index} space={space} state={state} displayPositions={displayPositions} movingPlayerId={movingPlayerId} onSelect={setSelectedSpace} />)}<BoardCenter state={state} you={you} onAction={onAction} busy={controlsBusy} /></div></section><aside className="game-sidebar"><DeedPanel state={state} playerId={viewedPlayerId} title={you.isSpectator ? `Watching ${viewedPlayer?.name ?? "the Avenue"}` : "Your portfolio"} onManage={(spaceIndex) => openManager(spaceIndex ?? null)} busy={controlsBusy} /><EventLog state={state} /></aside></div>
+      {reactionEvent && !activeDebt && <PawnReaction state={state} event={reactionEvent} />}
       {state.auction && !motionBusy && <AuctionHouse state={state} you={you} onAction={onAction} busy={busy} />}
-      {tradeOpen && !state.tradeOffer && <TradeBuilder state={state} youId={you.playerId} onAction={onAction} onClose={() => setTradeOpen(false)} busy={busy} />}
+      {managerOpen && !activeDebt && !tradeOpen && !state.tradeOffer && <DeedManager key={`${viewedPlayerId}-${managerSpace ?? "first"}`} state={state} playerId={viewedPlayerId} interactive={!you.isSpectator && viewedPlayerId === you.playerId} onAction={onAction} onTrade={(spaceIndex) => openTrade(spaceIndex)} onClose={() => setManagerOpen(false)} busy={busy} initialSpaceIndex={managerSpace} />}
+      {tradeOpen && !state.tradeOffer && !you.isSpectator && <TradeBuilder state={state} youId={you.playerId} onAction={onAction} onClose={() => { setTradeOpen(false); setTradeSeedSpace(null); }} busy={busy} initialOfferedSpaceIndex={tradeSeedSpace} />}
       {state.tradeOffer && <TradeOfferModal state={state} youId={you.playerId} onAction={onAction} busy={busy} />}
       {state.landmarkStealChoice && <LandmarkStealModal state={state} youId={you.playerId} onAction={onAction} busy={busy} />}
       {state.cardChoice && <CardChoiceModal state={state} youId={you.playerId} onAction={onAction} busy={busy} />}
-      {selectedSpace && <SpaceInspector space={selectedSpace} state={state} onClose={() => setSelectedSpace(null)} />}
+      {activeDebt && !tradeOpen && !state.tradeOffer && <BankruptcyRescue state={state} you={you} onAction={onAction} onTrade={() => openTrade()} busy={busy} />}
+      {selectedSpace && !activeDebt && <SpaceInspector space={selectedSpace} state={state} onClose={() => setSelectedSpace(null)} />}
       {state.phase === "finished" && <WinnerReveal state={state} onRules={onRules} />}
     </main>
   );

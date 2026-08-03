@@ -2335,6 +2335,738 @@ button.board-dice-control.can-roll:focus-visible { outline: 2px solid #fff1b0; o
 .error-actions { display: flex; justify-content: center; gap: 0.7rem; flex-wrap: wrap; }
 .error-actions .glass-button { display: inline-grid; place-items: center; text-decoration: none; }
 
+/* Player passport, match setup, and guided tour */
+.profile-home-button {
+  width: 100%;
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid rgba(211, 170, 75, 0.25);
+  border-radius: 15px;
+  cursor: pointer;
+  text-align: left;
+  background:
+    linear-gradient(90deg, rgba(211, 170, 75, 0.09), transparent 38%),
+    rgba(3, 10, 8, 0.72);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.05);
+  transition: transform 180ms ease, border-color 180ms ease, background 180ms ease, box-shadow 180ms ease;
+}
+.profile-home-button:hover,
+.profile-home-button:focus-visible {
+  transform: translateX(4px);
+  border-color: rgba(245, 217, 128, 0.65);
+  background:
+    linear-gradient(90deg, rgba(211, 170, 75, 0.16), transparent 48%),
+    rgba(3, 10, 8, 0.86);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.08), 0 12px 28px rgba(0, 0, 0, 0.26);
+}
+.profile-home-icon {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 232, 166, 0.68);
+  border-radius: 14px;
+  color: #1b1104;
+  background: linear-gradient(145deg, #f0d06e, #a66e1d 72%, #5d3a0b);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.5), 0 7px 18px rgba(0, 0, 0, 0.36);
+}
+.profile-home-icon svg { width: 23px; height: 23px; stroke-width: 2.2; }
+.profile-home-button > span:last-child { min-width: 0; display: grid; gap: 0.15rem; }
+.profile-home-button strong { color: #f4e6bd; font-family: var(--display); font-size: 0.98rem; }
+.profile-home-button small { color: #909990; font-size: 0.63rem; line-height: 1.35; }
+
+.join-role-picker,
+.match-mode-picker {
+  display: grid;
+  gap: 0.6rem;
+  margin: 0.6rem 0 1.2rem;
+}
+.join-role-picker { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.match-mode-picker { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.join-role-picker button,
+.match-mode-picker button {
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 13px;
+  cursor: pointer;
+  background: linear-gradient(145deg, rgba(22, 37, 32, 0.84), rgba(3, 9, 7, 0.92));
+  color: #d8d3c3;
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.045);
+  transition: transform 170ms ease, border-color 170ms ease, background 170ms ease, box-shadow 170ms ease;
+}
+.join-role-picker button:hover,
+.match-mode-picker button:hover { transform: translateY(-2px); border-color: rgba(245, 217, 128, 0.5); }
+.join-role-picker button.is-selected,
+.match-mode-picker button.is-selected {
+  border-color: var(--gold-bright);
+  background: linear-gradient(145deg, rgba(42, 109, 85, 0.5), rgba(92, 56, 7, 0.42));
+  box-shadow: inset 0 0 24px rgba(211, 170, 75, 0.08), 0 8px 24px rgba(0, 0, 0, 0.24);
+}
+.join-role-picker button {
+  min-height: 68px;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.65rem 0.8rem;
+  text-align: left;
+}
+.join-role-picker svg { width: 25px; height: 25px; flex: 0 0 auto; color: var(--gold-bright); }
+.join-role-picker span { min-width: 0; display: grid; gap: 0.12rem; }
+.join-role-picker strong { font-family: var(--display); font-size: 0.9rem; }
+.join-role-picker small { color: #939b94; font-size: 0.58rem; }
+.match-mode-picker button {
+  min-height: 116px;
+  display: grid;
+  align-content: start;
+  gap: 0.3rem;
+  padding: 0.78rem;
+  text-align: left;
+}
+.match-mode-picker button > span {
+  justify-self: start;
+  padding: 0.25rem 0.42rem;
+  border: 1px solid rgba(211, 170, 75, 0.34);
+  border-radius: 999px;
+  color: var(--gold-bright);
+  font-size: 0.52rem;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.match-mode-picker strong { color: #f2e4bd; font-family: var(--display); font-size: 0.94rem; }
+.match-mode-picker small { color: #939b94; font-size: 0.58rem; line-height: 1.45; }
+
+.profile-backdrop { z-index: 142; }
+.profile-panel {
+  position: relative;
+  z-index: 2;
+  width: min(880px, 100%);
+  max-height: calc(100dvh - 2rem);
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: clamp(1.2rem, 3vw, 2rem);
+  border: 1px solid rgba(245, 217, 128, 0.66);
+  border-radius: 26px;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(33, 176, 132, 0.18), transparent 32%),
+    radial-gradient(circle at 100% 100%, rgba(157, 24, 53, 0.16), transparent 34%),
+    linear-gradient(145deg, #10241e, #050b09 68%);
+  box-shadow: 0 38px 120px rgba(0, 0, 0, 0.82), inset 0 1px rgba(255, 255, 255, 0.08);
+  animation: modal-rise 280ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.profile-panel > .gold-particles { opacity: 0.38; }
+.profile-panel > .modal-close {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  float: right;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 50%;
+  background: rgba(2, 8, 6, 0.8);
+  color: #e6dcbf;
+  font-size: 1.4rem;
+}
+.profile-hero {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.25rem 2.8rem 1.2rem 0;
+  border-bottom: 1px solid rgba(245, 217, 128, 0.16);
+}
+.profile-kicker {
+  grid-column: 1 / -1;
+  color: var(--gold);
+  font-size: 0.58rem;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+.profile-hero .pawn-portrait-art {
+  width: 76px;
+  height: 76px;
+  border: 2px solid var(--gold);
+  border-radius: 20px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.44), 0 0 25px rgba(211, 170, 75, 0.12);
+}
+.profile-hero h2 { margin: 0; color: #f8e7af; font-family: var(--display); font-size: clamp(1.9rem, 5vw, 3rem); line-height: 0.95; }
+.profile-hero p { margin: 0.35rem 0 0; color: #9ba49d; font-size: 0.72rem; }
+.profile-level {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid rgba(245, 217, 128, 0.34);
+  border-radius: 999px;
+  color: var(--gold-bright);
+  background: rgba(211, 170, 75, 0.08);
+  font-size: 0.68rem;
+  font-weight: 900;
+  white-space: nowrap;
+}
+.profile-level svg { width: 16px; height: 16px; }
+.profile-stat-grid {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin-top: 1rem;
+}
+.profile-stat-grid article {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 13px;
+  background: rgba(0, 0, 0, 0.22);
+}
+.profile-stat-grid svg { width: 21px; height: 21px; flex: 0 0 auto; color: var(--gold); }
+.profile-stat-grid span { min-width: 0; display: grid; gap: 0.08rem; }
+.profile-stat-grid strong { overflow: hidden; color: #eee0b8; font-family: var(--display); font-size: 1rem; text-overflow: ellipsis; white-space: nowrap; }
+.profile-stat-grid small { color: #838d86; font-size: 0.52rem; font-weight: 800; line-height: 1.3; text-transform: uppercase; }
+.achievement-section { position: relative; z-index: 2; margin-top: 1.2rem; }
+.achievement-section > div:first-child { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin-bottom: 0.55rem; }
+.achievement-section > div:first-child span { color: #ebdeb7; font-family: var(--display); font-size: 1.05rem; font-weight: 900; }
+.achievement-section > div:first-child small { color: #78827b; font-size: 0.58rem; }
+.achievement-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.45rem; }
+.achievement-grid article {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 62px;
+  padding: 0.55rem;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 11px;
+  background: rgba(0, 0, 0, 0.2);
+}
+.achievement-grid article > span { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 10px; }
+.achievement-grid article > span svg { width: 20px; height: 20px; }
+.achievement-grid article > div { min-width: 0; display: grid; gap: 0.12rem; }
+.achievement-grid strong { color: #d8d1bb; font-size: 0.67rem; }
+.achievement-grid small { color: #777f79; font-size: 0.52rem; line-height: 1.35; }
+.achievement-grid .is-earned { border-color: rgba(245, 217, 128, 0.34); background: linear-gradient(90deg, rgba(211, 170, 75, 0.12), rgba(0, 0, 0, 0.18)); }
+.achievement-grid .is-earned > span { color: #1d1305; background: linear-gradient(145deg, #ffe69a, #a96d19); box-shadow: 0 0 18px rgba(211, 170, 75, 0.18); }
+.achievement-grid .is-earned strong { color: #f5e6b8; }
+.achievement-grid .is-locked { filter: saturate(0.4); opacity: 0.58; }
+.achievement-grid .is-locked > span { color: #68716a; background: rgba(255, 255, 255, 0.045); }
+.profile-first-run { margin: 0.8rem 0 0; color: #939c95; font-size: 0.66rem; text-align: center; }
+.profile-actions { position: relative; z-index: 2; display: flex; justify-content: flex-end; gap: 0.55rem; margin-top: 1rem; }
+.profile-loading { min-height: 360px; display: grid; place-items: center; align-content: center; gap: 0.8rem; color: var(--gold-bright); text-align: center; }
+.profile-loading svg { width: 54px; height: 54px; animation: profile-sparkle 1.2s ease-in-out infinite; }
+@keyframes profile-sparkle { 50% { filter: drop-shadow(0 0 22px rgba(245, 217, 128, 0.7)); transform: rotate(12deg) scale(1.08); } }
+
+.tutorial-backdrop {
+  z-index: 150;
+  background:
+    radial-gradient(circle at 50% 40%, rgba(18, 130, 98, 0.22), transparent 40%),
+    rgba(0, 0, 0, 0.9);
+}
+.tutorial-card {
+  position: relative;
+  width: min(540px, 100%);
+  overflow: hidden;
+  padding: clamp(1.5rem, 5vw, 2.7rem);
+  border: 1px solid rgba(245, 217, 128, 0.72);
+  border-radius: 27px;
+  text-align: center;
+  background:
+    linear-gradient(145deg, rgba(28, 78, 62, 0.36), transparent 42%),
+    #07110e;
+  box-shadow: 0 38px 120px rgba(0, 0, 0, 0.84), inset 0 1px rgba(255, 255, 255, 0.08);
+  animation: tutorial-arrive 360ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes tutorial-arrive { from { opacity: 0; transform: translateY(32px) rotateX(8deg) scale(0.94); } }
+.tutorial-aura { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.tutorial-aura i { position: absolute; border: 1px solid rgba(245, 217, 128, 0.13); border-radius: 50%; animation: tutorial-orbit 9s linear infinite; }
+.tutorial-aura i:nth-child(1) { width: 310px; height: 310px; top: -185px; left: -110px; }
+.tutorial-aura i:nth-child(2) { width: 250px; height: 250px; right: -150px; bottom: -120px; animation-direction: reverse; }
+.tutorial-aura i:nth-child(3) { width: 115px; height: 115px; right: 15%; top: 13%; animation-duration: 5s; }
+@keyframes tutorial-orbit { to { transform: rotate(360deg); } }
+.tutorial-icon {
+  position: relative;
+  width: 76px;
+  height: 76px;
+  display: grid;
+  place-items: center;
+  margin: 0 auto 1rem;
+  border: 1px solid #ffe7a0;
+  border-radius: 23px 9px 23px 9px;
+  color: #201503;
+  background: linear-gradient(145deg, #ffeaa2, #c68c27 64%, #6c430c);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.6), 0 12px 30px rgba(0, 0, 0, 0.4), 0 0 30px rgba(211, 170, 75, 0.17);
+}
+.tutorial-icon svg { width: 39px; height: 39px; stroke-width: 1.8; }
+.tutorial-kicker {
+  position: relative;
+  color: var(--gold);
+  font-size: 0.58rem;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+.tutorial-card h2 { position: relative; margin: 0.42rem 0 0.75rem; color: #f9e6ad; font-family: var(--display); font-size: clamp(2rem, 7vw, 3.2rem); line-height: 0.96; }
+.tutorial-card > p { position: relative; min-height: 96px; margin: 0 auto; max-width: 440px; color: #c5c7bc; font-size: 0.84rem; line-height: 1.65; }
+.tutorial-progress { position: relative; display: flex; justify-content: center; gap: 0.35rem; margin: 1.2rem 0; }
+.tutorial-progress i { width: 28px; height: 4px; border-radius: 999px; background: rgba(255, 255, 255, 0.12); transition: background 180ms ease, box-shadow 180ms ease; }
+.tutorial-progress i.is-complete { background: var(--gold-bright); box-shadow: 0 0 10px rgba(245, 217, 128, 0.4); }
+.tutorial-actions { position: relative; display: flex; align-items: center; justify-content: flex-end; gap: 0.55rem; }
+.tutorial-actions .text-button { margin-right: auto; }
+
+/* Board status and compact controls */
+.match-status {
+  position: absolute;
+  top: 16.5%;
+  left: 50%;
+  z-index: 3;
+  min-width: 130px;
+  display: grid;
+  gap: 0.12rem;
+  padding: 0.35rem 0.65rem;
+  border: 1px solid rgba(211, 170, 75, 0.24);
+  border-radius: 999px;
+  transform: translateX(-50%);
+  text-align: center;
+  background: rgba(5, 13, 10, 0.76);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.05);
+}
+.match-status span { color: var(--gold-bright); font-size: clamp(0.4rem, 0.65vw, 0.58rem); font-weight: 900; letter-spacing: 0.12em; text-transform: uppercase; }
+.match-status small { color: #889088; font-size: clamp(0.32rem, 0.55vw, 0.49rem); }
+.match-status.is-final-countdown { border-color: rgba(240, 82, 105, 0.62); animation: closing-bell 1.6s ease-in-out infinite; }
+.match-status.is-final-countdown span { color: #ff9aaa; }
+@keyframes closing-bell { 50% { box-shadow: 0 0 22px rgba(240, 82, 105, 0.2), inset 0 1px rgba(255, 255, 255, 0.07); } }
+.topbar-actions .topbar-icon-action {
+  width: 34px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+}
+.topbar-icon-action svg { width: 16px; height: 16px; }
+.topbar-actions button:active:not(:disabled) { transform: translateY(1px) scale(0.97); }
+.topbar-actions button > svg { vertical-align: middle; }
+
+/* Premium deed office */
+.deed-manager-backdrop {
+  z-index: 112;
+  padding: 1rem;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(30, 152, 114, 0.16), transparent 34%),
+    rgba(0, 0, 0, 0.83);
+}
+.deed-manager {
+  width: min(1120px, 100%);
+  height: min(760px, calc(100dvh - 2rem));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid rgba(245, 217, 128, 0.68);
+  border-radius: 25px;
+  background:
+    linear-gradient(135deg, rgba(27, 102, 78, 0.2), transparent 32%),
+    #07110e;
+  box-shadow: 0 38px 120px rgba(0, 0, 0, 0.84), inset 0 1px rgba(255, 255, 255, 0.07);
+  animation: modal-rise 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.deed-manager-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.2rem;
+  border-bottom: 1px solid rgba(245, 217, 128, 0.17);
+  background: rgba(0, 0, 0, 0.18);
+}
+.deed-manager-header > div { min-width: 0; }
+.deed-manager-header span,
+.deed-manager-kicker { color: var(--gold); font-size: 0.55rem; font-weight: 900; letter-spacing: 0.15em; text-transform: uppercase; }
+.deed-manager-header h2 { margin: 0.15rem 0; color: #f7e5ad; font-family: var(--display); font-size: clamp(1.65rem, 4vw, 2.5rem); line-height: 0.95; }
+.deed-manager-header p { margin: 0; color: #8c968f; font-size: 0.64rem; line-height: 1.4; }
+.deed-manager-header > button {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 50%;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.045);
+  color: #ded8c5;
+}
+.deed-manager-header > button:hover { border-color: var(--gold); color: var(--gold-bright); transform: rotate(4deg); }
+.deed-manager-header svg { width: 19px; height: 19px; }
+.deed-manager-layout { min-height: 0; display: grid; grid-template-columns: minmax(230px, 0.34fr) minmax(0, 1fr); }
+.deed-manager-list {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.65rem;
+  border-right: 1px solid rgba(245, 217, 128, 0.13);
+  background: rgba(0, 0, 0, 0.17);
+}
+.deed-manager-list > button {
+  --district-color: var(--gold);
+  width: 100%;
+  min-width: 0;
+  min-height: 68px;
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 0.55rem;
+  margin-bottom: 0.42rem;
+  padding: 0.45rem;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-left: 3px solid var(--district-color);
+  border-radius: 11px;
+  cursor: pointer;
+  text-align: left;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--district-color) 10%, transparent), rgba(0, 0, 0, 0.14));
+  color: #dbd3ba;
+  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+.deed-manager-list > button:hover { transform: translateX(3px); border-color: color-mix(in srgb, var(--district-color) 65%, white); }
+.deed-manager-list > button.is-selected {
+  border-color: color-mix(in srgb, var(--district-color) 72%, white);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--district-color) 22%, transparent), rgba(211, 170, 75, 0.06));
+  box-shadow: inset 0 0 22px color-mix(in srgb, var(--district-color) 8%, transparent);
+}
+.deed-manager-list > button.is-mortgaged { filter: saturate(0.55); }
+.deed-manager-list > button > span { width: 52px; height: 52px; border-radius: 9px; background-position: center; background-size: cover; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12); }
+.deed-manager-list > button > div { min-width: 0; display: grid; gap: 0.2rem; }
+.deed-manager-list strong { overflow: hidden; font-family: var(--display); font-size: 0.73rem; text-overflow: ellipsis; white-space: nowrap; }
+.deed-manager-list small { color: #838d86; font-size: 0.52rem; line-height: 1.3; }
+.deed-manager-list > button > i { width: 27px; height: 27px; display: grid; place-items: center; border-radius: 8px; color: var(--gold); background: rgba(211, 170, 75, 0.08); }
+.deed-manager-list svg { width: 15px; height: 15px; }
+.deed-manager-detail {
+  --district-color: var(--gold);
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(230px, 0.72fr) minmax(0, 1.28fr);
+  overflow: hidden;
+}
+.deed-manager-art {
+  position: relative;
+  min-height: 0;
+  background-position: center;
+  background-size: cover;
+  isolation: isolate;
+}
+.deed-manager-art::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(0deg, rgba(2, 7, 5, 0.86), transparent 50%), linear-gradient(90deg, transparent 72%, #07110e);
+}
+.deed-manager-art > span {
+  position: absolute;
+  left: 1rem;
+  bottom: 1rem;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid color-mix(in srgb, var(--district-color) 65%, white);
+  border-radius: 999px;
+  background: rgba(3, 9, 7, 0.82);
+  color: #f4ead0;
+  font-size: 0.54rem;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.deed-manager-art > b {
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.45rem 0.62rem;
+  border: 1px solid rgba(245, 217, 128, 0.5);
+  border-radius: 9px;
+  color: var(--gold-bright);
+  background: rgba(24, 15, 3, 0.86);
+  font-size: 0.58rem;
+  text-transform: uppercase;
+}
+.deed-manager-art > b svg { width: 15px; height: 15px; }
+.deed-manager-copy {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: clamp(1rem, 2.4vw, 1.6rem);
+}
+.deed-manager-copy h3 { margin: 0.25rem 0 0.8rem; color: #f7e3a9; font-family: var(--display); font-size: clamp(2rem, 5vw, 3.4rem); line-height: 0.9; overflow-wrap: anywhere; }
+.deed-manager-facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.4rem; }
+.deed-manager-facts > span {
+  min-width: 0;
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.55rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.2);
+}
+.deed-manager-facts small { color: #7b857e; font-size: 0.49rem; font-weight: 900; line-height: 1.25; text-transform: uppercase; }
+.deed-manager-facts strong { overflow: hidden; color: #e9dcb9; font-family: var(--display); font-size: 0.82rem; text-overflow: ellipsis; white-space: nowrap; }
+.fee-ladder {
+  margin-top: 0.7rem;
+  padding: 0.7rem;
+  border: 1px solid rgba(245, 217, 128, 0.13);
+  border-radius: 12px;
+  background: linear-gradient(145deg, rgba(211, 170, 75, 0.06), rgba(0, 0, 0, 0.18));
+}
+.fee-ladder > div:first-child { display: flex; align-items: baseline; justify-content: space-between; gap: 0.7rem; margin-bottom: 0.55rem; }
+.fee-ladder > div:first-child span { color: #eadfbf; font-family: var(--display); font-size: 0.86rem; font-weight: 900; }
+.fee-ladder > div:first-child small { color: #7c867f; font-size: 0.5rem; text-align: right; }
+.fee-ladder > div:last-child { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.35rem; }
+.fee-ladder > div:last-child > span {
+  min-width: 0;
+  display: grid;
+  justify-items: center;
+  gap: 0.2rem;
+  padding: 0.45rem 0.25rem;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 9px;
+  background: rgba(0, 0, 0, 0.17);
+  text-align: center;
+}
+.fee-ladder > div:last-child > span.is-current { border-color: var(--gold-bright); background: rgba(211, 170, 75, 0.12); box-shadow: 0 0 16px rgba(211, 170, 75, 0.08); }
+.fee-ladder i { width: 23px; height: 23px; display: grid; place-items: center; color: var(--gold); }
+.fee-ladder i svg { width: 17px; height: 17px; }
+.fee-ladder small { color: #7f8982; font-size: 0.47rem; line-height: 1.2; }
+.fee-ladder strong { color: #f0ddb0; font-family: var(--display); font-size: 0.72rem; }
+.fee-ladder.single-fee { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.fee-ladder.single-fee > div:first-child { display: grid; margin: 0; }
+.fee-ladder.single-fee > strong { color: var(--gold-bright); font-size: 1rem; white-space: nowrap; }
+.deed-manager-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.45rem; margin-top: 0.7rem; }
+.deed-manager-actions > button {
+  min-width: 0;
+  min-height: 58px;
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  cursor: pointer;
+  text-align: left;
+  background: rgba(255, 255, 255, 0.035);
+  color: #ded7c2;
+  transition: transform 160ms ease, border-color 160ms ease, filter 160ms ease;
+}
+.deed-manager-actions > button:hover:not(:disabled) { transform: translateY(-2px); filter: brightness(1.12); }
+.deed-manager-actions > button > svg { width: 23px; height: 23px; justify-self: center; }
+.deed-manager-actions > button > span { min-width: 0; display: grid; gap: 0.1rem; }
+.deed-manager-actions strong { font-size: 0.65rem; }
+.deed-manager-actions small { color: #8c968f; font-size: 0.52rem; line-height: 1.3; }
+.deed-build-action { border-color: rgba(245, 217, 128, 0.36) !important; background: linear-gradient(145deg, rgba(211, 170, 75, 0.18), rgba(83, 55, 8, 0.15)) !important; color: var(--gold-bright) !important; }
+.deed-sell-action { border-color: rgba(240, 82, 105, 0.3) !important; }
+.deed-sell-action > svg { color: #f17a8e; }
+.deed-mortgage-action { border-color: rgba(113, 151, 218, 0.3) !important; }
+.deed-mortgage-action > svg { color: #9ab9ed; }
+.deed-reopen-action { border-color: rgba(36, 199, 157, 0.36) !important; }
+.deed-reopen-action > svg { color: #58d9b5; }
+.deed-trade-action { border-color: rgba(194, 118, 234, 0.3) !important; }
+.deed-trade-action > svg { color: #d7a2f3; }
+.deed-manager-lock-note { margin: 0.6rem 0 0; padding: 0.5rem 0.65rem; border-left: 2px solid #8b6926; color: #858e87; background: rgba(211, 170, 75, 0.04); font-size: 0.54rem; line-height: 1.45; }
+.deed-manager-empty { min-height: 0; display: grid; place-items: center; align-content: center; gap: 0.5rem; padding: 2rem; color: #89928b; text-align: center; }
+.deed-manager-empty > svg { width: 64px; height: 64px; color: var(--gold); opacity: 0.7; }
+.deed-manager-empty strong { color: #e5d9b8; font-family: var(--display); font-size: 1.2rem; }
+.deed-manager-empty p { margin: 0; font-size: 0.68rem; }
+.deed-row.is-mortgaged { filter: saturate(0.54); background: linear-gradient(90deg, rgba(112, 139, 174, 0.08), transparent 60%); }
+.deed-row.is-mortgaged .deed-art { box-shadow: inset 0 0 0 2px rgba(133, 164, 208, 0.32); }
+.deed-row.is-mortgaged .deed-builds { color: #9bb6dc; }
+.panel-heading button {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.28rem 0.45rem;
+  border: 1px solid rgba(245, 217, 128, 0.28);
+  border-radius: 7px;
+  cursor: pointer;
+  background: rgba(211, 170, 75, 0.08);
+  color: var(--gold-bright);
+  font-size: 0.5rem;
+  font-weight: 900;
+}
+.panel-heading button svg { width: 12px; height: 12px; }
+.panel-heading button:hover:not(:disabled) { border-color: var(--gold-bright); transform: translateY(-1px); }
+
+/* Bankruptcy rescue and table reactions */
+.rescue-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 118;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background:
+    radial-gradient(circle at 50% 40%, rgba(156, 29, 53, 0.26), transparent 42%),
+    rgba(0, 0, 0, 0.9);
+  backdrop-filter: blur(11px);
+  animation: modal-fade 180ms ease both;
+}
+.rescue-house {
+  width: min(760px, 100%);
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
+  padding: clamp(1.1rem, 3vw, 1.7rem);
+  border: 1px solid rgba(245, 217, 128, 0.68);
+  border-radius: 25px;
+  background:
+    radial-gradient(circle at 0 0, rgba(240, 82, 105, 0.15), transparent 32%),
+    linear-gradient(145deg, #1b0b0f, #06100d 68%);
+  box-shadow: 0 38px 120px rgba(0, 0, 0, 0.86), inset 0 1px rgba(255, 255, 255, 0.07);
+  animation: rescue-arrive 330ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes rescue-arrive { from { opacity: 0; transform: translateY(34px) scale(0.94); } }
+.rescue-house > header { display: grid; grid-template-columns: 62px minmax(0, 1fr); align-items: center; gap: 0.8rem; }
+.rescue-icon {
+  width: 60px;
+  height: 60px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 158, 175, 0.58);
+  border-radius: 18px 8px 18px 8px;
+  color: #ffc0cb;
+  background: linear-gradient(145deg, rgba(202, 42, 73, 0.58), rgba(79, 9, 24, 0.82));
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.4), 0 0 26px rgba(240, 82, 105, 0.12);
+}
+.rescue-icon svg { width: 31px; height: 31px; }
+.rescue-house header > div > span { color: #e26d82; font-size: 0.55rem; font-weight: 900; letter-spacing: 0.13em; text-transform: uppercase; }
+.rescue-house h2 { margin: 0.22rem 0; color: #f8e2ad; font-family: var(--display); font-size: clamp(2rem, 6vw, 3.4rem); line-height: 0.92; }
+.rescue-house header p { margin: 0; color: #929991; font-size: 0.63rem; line-height: 1.4; }
+.rescue-balance {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 1rem;
+  margin: 1rem 0;
+  padding: 0.8rem;
+  border: 1px solid rgba(245, 217, 128, 0.17);
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.25);
+}
+.rescue-balance > span { display: grid; justify-items: center; gap: 0.15rem; }
+.rescue-balance small { color: #808982; font-size: 0.53rem; font-weight: 900; text-transform: uppercase; }
+.rescue-balance strong { color: #f8dda0; font-family: var(--display); font-size: clamp(1.4rem, 4vw, 2.2rem); }
+.rescue-balance > i { width: 1px; height: 38px; background: rgba(245, 217, 128, 0.22); }
+.rescue-instruction { margin: 0 0 0.7rem; color: #bac0b8; font-size: 0.72rem; line-height: 1.55; }
+.rescue-assets { max-height: 260px; overflow-y: auto; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.45rem; }
+.rescue-assets > button {
+  min-width: 0;
+  min-height: 66px;
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.45rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 11px;
+  cursor: pointer;
+  text-align: left;
+  background: rgba(255, 255, 255, 0.035);
+  color: #d8d2bd;
+}
+.rescue-assets > button:hover:not(:disabled) { border-color: var(--gold); transform: translateY(-2px); }
+.rescue-assets > button > span { width: 52px; height: 52px; border-radius: 8px; background-position: center; background-size: cover; }
+.rescue-assets > button > div { min-width: 0; display: grid; gap: 0.15rem; }
+.rescue-assets strong { overflow: hidden; font-size: 0.62rem; text-overflow: ellipsis; white-space: nowrap; }
+.rescue-assets small { color: #929a93; font-size: 0.52rem; }
+.rescue-assets > button > svg { width: 20px; height: 20px; color: var(--gold); }
+.rescue-no-assets { grid-column: 1 / -1; min-height: 82px; display: flex; align-items: center; justify-content: center; gap: 0.7rem; padding: 0.8rem; border: 1px dashed rgba(255, 255, 255, 0.14); border-radius: 12px; color: #858e87; }
+.rescue-no-assets > svg { width: 33px; height: 33px; color: #aa7d2d; }
+.rescue-no-assets > span { display: grid; gap: 0.15rem; }
+.rescue-no-assets strong { color: #cbc5b3; font-size: 0.68rem; }
+.rescue-no-assets small { font-size: 0.55rem; }
+.rescue-actions { display: grid; grid-template-columns: 1fr 1.2fr 0.8fr; gap: 0.45rem; margin-top: 0.8rem; }
+.rescue-actions button {
+  min-height: 49px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 0.62rem;
+  font-weight: 900;
+}
+.rescue-actions svg { width: 17px; height: 17px; }
+.rescue-trade { border-color: rgba(192, 126, 227, 0.35) !important; background: rgba(141, 66, 180, 0.13); color: #dfb3f3; }
+.rescue-settle { border-color: rgba(245, 217, 128, 0.56) !important; background: linear-gradient(145deg, #edcf75, #a16e1e); color: #1a1003; }
+.rescue-bankrupt { border-color: rgba(240, 82, 105, 0.35) !important; background: rgba(151, 29, 52, 0.18); color: #f19cad; }
+.rescue-waiting { min-height: 150px; display: grid; grid-template-columns: 74px minmax(0, 1fr) auto; align-items: center; gap: 0.8rem; margin-top: 1rem; padding: 1rem; border: 1px solid rgba(245, 217, 128, 0.14); border-radius: 15px; background: rgba(0, 0, 0, 0.23); }
+.rescue-waiting .pawn-portrait-art { width: 72px; height: 72px; border-radius: 18px; }
+.rescue-waiting > span { display: grid; gap: 0.25rem; }
+.rescue-waiting strong { color: #e5dab9; font-family: var(--display); font-size: 1rem; }
+.rescue-waiting small { color: #8d968f; font-size: 0.62rem; line-height: 1.5; }
+.rescue-waiting > i { width: 12px; height: 12px; border-radius: 50%; background: var(--gold-bright); box-shadow: 0 0 18px var(--gold); animation: status-blink 1s ease-in-out infinite; }
+
+.pawn-reaction {
+  position: fixed;
+  top: max(1rem, env(safe-area-inset-top));
+  left: 50%;
+  z-index: 126;
+  min-width: min(440px, calc(100vw - 1.5rem));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.8rem;
+  padding: 0.65rem 0.9rem;
+  overflow: hidden;
+  border: 1px solid rgba(245, 217, 128, 0.7);
+  border-radius: 17px;
+  transform: translateX(-50%);
+  background: linear-gradient(145deg, rgba(26, 70, 56, 0.97), rgba(4, 10, 8, 0.98));
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.64), 0 0 32px rgba(211, 170, 75, 0.13);
+  animation: reaction-pop 3.1s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes reaction-pop {
+  0% { opacity: 0; transform: translate(-50%, -30px) scale(0.86); }
+  10%, 84% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+  90% { transform: translate(-50%, 0) scale(1.03); }
+  100% { opacity: 0; transform: translate(-50%, -12px) scale(0.96); }
+}
+.pawn-reaction .pawn-portrait-art { position: relative; z-index: 2; width: 58px; height: 58px; flex: 0 0 58px; border-radius: 15px; }
+.pawn-reaction > div { position: relative; z-index: 2; display: grid; justify-items: center; gap: 0.12rem; text-align: center; }
+.pawn-reaction > div > svg { width: 22px; height: 22px; color: var(--gold-bright); }
+.pawn-reaction strong { color: #f9e6ac; font-family: var(--display); font-size: 1rem; }
+.pawn-reaction small { color: #a9b0a9; font-size: 0.56rem; }
+.reaction-rays { position: absolute; width: 190px; height: 190px; border: 1px dashed rgba(245, 217, 128, 0.26); border-radius: 50%; animation: reaction-spin 4s linear infinite; }
+.reaction-rays::before,
+.reaction-rays::after { content: ""; position: absolute; inset: 25px; border: 1px solid rgba(245, 217, 128, 0.14); border-radius: 50%; }
+.reaction-rays::after { inset: 55px; }
+@keyframes reaction-spin { to { transform: rotate(360deg); } }
+.reaction-rent { border-color: rgba(240, 82, 105, 0.62); background: linear-gradient(145deg, rgba(94, 12, 30, 0.97), rgba(4, 10, 8, 0.98)); }
+.reaction-trade { border-color: rgba(173, 111, 208, 0.62); background: linear-gradient(145deg, rgba(70, 25, 94, 0.97), rgba(4, 10, 8, 0.98)); }
+
+.pawn-victory-stage { position: relative; width: 152px; height: 130px; display: grid; place-items: center; margin: 0.5rem auto; }
+.pawn-victory-stage > i { position: absolute; border: 1px solid rgba(245, 217, 128, 0.2); border-radius: 50%; animation: victory-ring 2.8s ease-out infinite; }
+.pawn-victory-stage > i:nth-child(1) { width: 75px; height: 75px; }
+.pawn-victory-stage > i:nth-child(2) { width: 112px; height: 112px; animation-delay: 0.55s; }
+.pawn-victory-stage > i:nth-child(3) { width: 148px; height: 148px; animation-delay: 1.1s; }
+@keyframes victory-ring { 0% { opacity: 0; transform: scale(0.62); } 35% { opacity: 0.8; } 100% { opacity: 0; transform: scale(1.08); } }
+.winner-card .pawn-victory-stage .pawn-portrait-art { position: relative; z-index: 2; width: 104px; height: 104px; margin: 0; border: 2px solid var(--gold-bright); }
+.pawn-victory-stage > svg { position: absolute; z-index: 3; top: -1px; right: 7px; width: 38px; height: 38px; fill: #d49c29; color: #ffe498; filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.45)); animation: crown-bob 1.4s ease-in-out infinite; }
+@keyframes crown-bob { 50% { transform: translateY(-4px) rotate(4deg); } }
+
 @media (max-width: 1100px) {
   .pawn-picker { grid-template-columns: repeat(9, 82px); }
   .game-layout { grid-template-columns: minmax(520px, 1fr) 285px; }
@@ -2349,6 +3081,8 @@ button.board-dice-control.can-roll:focus-visible { outline: 2px solid #fff1b0; o
   .board-shell { width: min(100%, 760px); min-width: 0; }
   .game-sidebar { width: min(100%, 760px); height: auto; min-height: 0; grid-template-columns: 1fr 1fr; grid-template-rows: minmax(300px, 44svh); justify-self: center; }
   .rules-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .deed-manager-detail { grid-template-columns: minmax(180px, 0.58fr) minmax(0, 1.42fr); }
+  .deed-manager-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 640px) {
@@ -2362,6 +3096,7 @@ button.board-dice-control.can-roll:focus-visible { outline: 2px solid #fff1b0; o
   .home-cover-card img { border-radius: 13px; }
   .home-menu h1 { font-size: 3.2rem; }
   .menu-button { min-height: 70px; }
+  .profile-home-button { min-height: 62px; }
   .setup-screen,
   .lobby-screen { place-items: start center; padding: 0; }
   .setup-card,
@@ -2370,6 +3105,9 @@ button.board-dice-control.can-roll:focus-visible { outline: 2px solid #fff1b0; o
   .lobby-card h1 { padding-right: 4.5rem; font-size: 2.7rem; }
   .setup-row { grid-template-columns: 1fr; }
   .theme-picker { display: grid; }
+  .join-role-picker { grid-template-columns: 1fr 1fr; }
+  .match-mode-picker { display: flex; overflow-x: auto; overscroll-behavior-x: contain; padding-bottom: 0.35rem; }
+  .match-mode-picker button { min-width: min(76vw, 240px); min-height: 110px; }
   .pawn-picker { max-width: 100%; grid-template-columns: repeat(9, 76px); overscroll-behavior-x: contain; }
   .seat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .seat-card { min-height: 132px; grid-template-columns: 44px 1fr; padding: 0.65rem; }
@@ -2381,7 +3119,11 @@ button.board-dice-control.can-roll:focus-visible { outline: 2px solid #fff1b0; o
   .game-screen { padding: 0.4rem; }
   .game-topbar { grid-template-columns: 1fr auto; gap: 0.4rem; }
   .topbar-room { grid-column: 1 / -1; grid-row: 2; justify-content: center; }
-  .topbar-actions button:first-child { display: none; }
+  .topbar-actions button { min-height: 32px; padding-inline: 0.45rem; }
+  .topbar-actions .topbar-icon-action { width: 32px; display: inline-grid; }
+  .topbar-actions button:nth-last-child(4) { display: none; }
+  .topbar-actions button:nth-last-child(2) { font-size: 0; }
+  .topbar-actions button:nth-last-child(2) svg { width: 15px; height: 15px; }
   .topbar-actions .trade-topbar { padding-inline: 0.5rem; }
   .trade-topbar svg { width: 12px; }
   .mini-logo { font-size: 0.82rem; }
@@ -2400,6 +3142,8 @@ button.board-dice-control.can-roll:focus-visible { outline: 2px solid #fff1b0; o
   .movement-banner .pawn-portrait-art { width: 25px; height: 25px; border-radius: 7px; }
   .turn-console { width: 82%; bottom: 5%; min-height: 40%; padding: 0.35rem; gap: 0.25rem; }
   .board-center-brand { top: 5%; font-size: clamp(1rem, 7vw, 2rem); }
+  .match-status { top: 16.2%; min-width: 94px; padding: 0.2rem 0.4rem; }
+  .match-status small { display: none; }
   .deck-pile { top: 27%; width: 16%; }
   .lucky-pile { left: 7%; }
   .plot-pile { right: 7%; }
@@ -2480,6 +3224,86 @@ button.board-dice-control.can-roll:focus-visible { outline: 2px solid #fff1b0; o
   .card-choice-options strong { font-size: 0.78rem; }
   .card-choice-options em { font-size: 0.51rem; }
   .card-choice-copy .steal-instruction { margin-top: 0.45rem; padding: 0.5rem; }
+  .profile-backdrop,
+  .tutorial-backdrop,
+  .deed-manager-backdrop,
+  .rescue-backdrop { place-items: stretch center; padding: 0; }
+  .profile-panel,
+  .tutorial-card,
+  .deed-manager,
+  .rescue-house {
+    width: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
+    border-width: 0;
+    border-radius: 0;
+  }
+  .profile-panel { padding: max(1rem, env(safe-area-inset-top)) 0.85rem max(1rem, env(safe-area-inset-bottom)); }
+  .profile-panel > .modal-close { top: max(0.1rem, env(safe-area-inset-top)); }
+  .profile-hero { grid-template-columns: 62px minmax(0, 1fr); padding-right: 2.8rem; }
+  .profile-kicker { grid-column: 1 / -1; }
+  .profile-hero .pawn-portrait-art { width: 60px; height: 60px; border-radius: 16px; }
+  .profile-hero h2 { font-size: 2rem; }
+  .profile-level { grid-column: 1 / -1; justify-self: start; padding: 0.4rem 0.6rem; }
+  .profile-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .profile-stat-grid article { padding: 0.55rem; }
+  .achievement-section > div:first-child { align-items: flex-start; flex-direction: column; gap: 0.12rem; }
+  .achievement-grid { grid-template-columns: 1fr; }
+  .achievement-grid article { min-height: 57px; }
+  .profile-actions { position: sticky; bottom: calc(-1rem - env(safe-area-inset-bottom)); z-index: 4; margin-inline: -0.85rem; padding: 0.65rem 0.85rem max(0.65rem, env(safe-area-inset-bottom)); background: linear-gradient(0deg, #050b09 72%, transparent); }
+  .profile-actions > button { flex: 1; }
+  .tutorial-card { display: flex; flex-direction: column; justify-content: center; padding: max(1.2rem, env(safe-area-inset-top)) 1rem max(1.2rem, env(safe-area-inset-bottom)); }
+  .tutorial-icon { width: 68px; height: 68px; }
+  .tutorial-icon svg { width: 34px; height: 34px; }
+  .tutorial-card > p { min-height: 128px; font-size: 0.78rem; }
+  .tutorial-progress i { width: 22px; }
+  .tutorial-actions { display: grid; grid-template-columns: auto 1fr; }
+  .tutorial-actions .text-button { grid-column: 1 / -1; margin: 0; order: 3; }
+  .tutorial-actions .gold-button { grid-column: 2; }
+  .deed-manager { grid-template-rows: auto minmax(0, 1fr); }
+  .deed-manager-header { padding: max(0.8rem, env(safe-area-inset-top)) 0.85rem 0.7rem; }
+  .deed-manager-header h2 { font-size: 1.8rem; }
+  .deed-manager-layout { display: flex; flex-direction: column; overflow: hidden; }
+  .deed-manager-list {
+    flex: 0 0 auto;
+    display: flex;
+    gap: 0.4rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0.55rem;
+    border-right: 0;
+    border-bottom: 1px solid rgba(245, 217, 128, 0.13);
+    overscroll-behavior-x: contain;
+  }
+  .deed-manager-list > button { width: 175px; min-width: 175px; min-height: 62px; grid-template-columns: 46px minmax(0, 1fr) 24px; margin: 0; }
+  .deed-manager-list > button > span { width: 46px; height: 46px; }
+  .deed-manager-detail { min-height: 0; flex: 1 1 auto; display: flex; flex-direction: column; overflow-y: auto; }
+  .deed-manager-art { min-height: 152px; flex: 0 0 152px; }
+  .deed-manager-art::before { background: linear-gradient(0deg, #07110e, transparent 72%); }
+  .deed-manager-copy { overflow: visible; padding: 0.85rem 0.85rem max(1rem, env(safe-area-inset-bottom)); }
+  .deed-manager-copy h3 { font-size: 2.35rem; }
+  .deed-manager-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .fee-ladder > div:last-child { grid-template-columns: repeat(4, minmax(62px, 1fr)); overflow-x: auto; }
+  .deed-manager-actions { grid-template-columns: 1fr; }
+  .deed-manager-actions > button { min-height: 55px; }
+  .rescue-house { padding: max(1rem, env(safe-area-inset-top)) 0.85rem max(1rem, env(safe-area-inset-bottom)); }
+  .rescue-house > header { grid-template-columns: 52px minmax(0, 1fr); }
+  .rescue-icon { width: 50px; height: 50px; }
+  .rescue-icon svg { width: 27px; height: 27px; }
+  .rescue-house h2 { font-size: 2.35rem; }
+  .rescue-balance { margin: 0.75rem 0; }
+  .rescue-assets { max-height: none; flex: 1 1 auto; grid-template-columns: 1fr; }
+  .rescue-actions { position: sticky; bottom: calc(-1rem - env(safe-area-inset-bottom)); grid-template-columns: 1fr 1fr; margin-inline: -0.85rem; padding: 0.65rem 0.85rem max(0.65rem, env(safe-area-inset-bottom)); background: linear-gradient(0deg, #06100d 76%, transparent); }
+  .rescue-actions .rescue-bankrupt { grid-column: 1 / -1; min-height: 40px; }
+  .rescue-waiting { grid-template-columns: 64px minmax(0, 1fr); }
+  .rescue-waiting .pawn-portrait-art { width: 62px; height: 62px; }
+  .rescue-waiting > i { grid-column: 1 / -1; justify-self: center; }
+  .pawn-reaction { top: max(0.55rem, env(safe-area-inset-top)); min-width: calc(100vw - 1rem); gap: 0.5rem; padding: 0.5rem; }
+  .pawn-reaction .pawn-portrait-art { width: 48px; height: 48px; flex-basis: 48px; }
+  .pawn-reaction strong { font-size: 0.8rem; }
+  .pawn-reaction small { font-size: 0.48rem; }
+  .winner-card { padding: 1.4rem 1rem; }
+  .winner-card h2 { font-size: 2.4rem; }
 }
 
 @media (max-height: 700px) and (orientation: landscape) and (max-width: 1100px) {

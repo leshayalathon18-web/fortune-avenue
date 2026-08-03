@@ -2,6 +2,7 @@ import {
   BOT_NAMES,
   DISTRICTS,
   LUCKY_CARDS,
+  MATCH_MODES,
   PAWNS,
   PLAYER_COLORS,
   PLOT_CARDS,
@@ -10,11 +11,13 @@ import {
 } from "./game-data";
 import type {
   BoardTheme,
+  BankruptcyDebt,
   CardDefinition,
   CardDeck,
   FortuneGameState,
   GameEvent,
   GameEventType,
+  MatchMode,
   PlayerState,
   PropertyState,
   RoomAction,
@@ -26,11 +29,12 @@ const BOARD_SIZE = 40;
 const MAX_UPGRADES = 3;
 
 export const DEFAULT_SETTINGS = {
-  startCash: 1400,
-  passBonus: 200,
-  targetNetWorth: 5000,
-  requiredProperties: 8,
-  maxTurns: 180,
+  matchMode: "classic",
+  startCash: MATCH_MODES.classic.startCash,
+  passBonus: MATCH_MODES.classic.passBonus,
+  targetNetWorth: MATCH_MODES.classic.targetNetWorth,
+  requiredProperties: MATCH_MODES.classic.requiredProperties,
+  maxTurns: MATCH_MODES.classic.maxTurns,
 } as const;
 
 export interface LobbyOptions {
@@ -43,21 +47,55 @@ export interface LobbyOptions {
   pawnSlug: string;
   botCount: number;
   seed: number;
+  matchMode?: MatchMode;
 }
 
-function cloneState(state: FortuneGameState): FortuneGameState {
-  const cloned = JSON.parse(JSON.stringify(state)) as FortuneGameState;
-  cloned.auction ??= null;
-  if (cloned.auction) cloned.auction.participantIds ??= activePlayers(cloned).map((player) => player.id);
-  cloned.tradeOffer ??= null;
-  cloned.landmarkStealChoice ??= null;
-  cloned.cardChoice ??= null;
-  for (const property of Object.values(cloned.properties)) {
+export function settingsForMode(mode: MatchMode) {
+  const config = MATCH_MODES[mode];
+  return {
+    matchMode: mode,
+    startCash: config.startCash,
+    passBonus: config.passBonus,
+    targetNetWorth: config.targetNetWorth,
+    requiredProperties: config.requiredProperties,
+    maxTurns: config.maxTurns,
+  };
+}
+
+function emptyGameStats() {
+  return {
+    deedsBought: 0,
+    auctionsWon: 0,
+    tradesCompleted: 0,
+    largestFeePaid: 0,
+    largestFeeCollected: 0,
+    castlesBuilt: 0,
+  };
+}
+
+export function normalizeGameState(state: FortuneGameState) {
+  const mode = state.settings?.matchMode && MATCH_MODES[state.settings.matchMode]
+    ? state.settings.matchMode
+    : "classic";
+  state.settings = { ...settingsForMode(mode), ...state.settings, matchMode: mode };
+  state.auction ??= null;
+  if (state.auction) state.auction.participantIds ??= activePlayers(state).map((player) => player.id);
+  state.tradeOffer ??= null;
+  state.bankruptcyQueue ??= [];
+  state.landmarkStealChoice ??= null;
+  state.cardChoice ??= null;
+  for (const property of Object.values(state.properties)) {
+    property.mortgaged ??= false;
     property.rentDiscountUntilTurn ??= 0;
     property.closedUntilOwnerVisit ??= false;
   }
-  cloned.eventSequence ??= cloned.log.length;
-  return cloned;
+  for (const player of state.players) player.gameStats ??= emptyGameStats();
+  state.eventSequence ??= state.log.length;
+  return state;
+}
+
+function cloneState(state: FortuneGameState): FortuneGameState {
+  return normalizeGameState(JSON.parse(JSON.stringify(state)) as FortuneGameState);
 }
 
 function now() {
@@ -112,6 +150,7 @@ export function createPlayer(
   pawnSlug: string,
   index: number,
   isBot = false,
+  startCash = DEFAULT_SETTINGS.startCash,
 ): PlayerState {
   return {
     id,
@@ -119,7 +158,7 @@ export function createPlayer(
     pawnSlug: PAWNS.some((pawn) => pawn.slug === pawnSlug) ? pawnSlug : PAWNS[index % PAWNS.length].slug,
     color: PLAYER_COLORS[index % PLAYER_COLORS.length],
     isBot,
-    cash: DEFAULT_SETTINGS.startCash,
+    cash: startCash,
     position: 0,
     bankrupt: false,
     skipTurns: 0,
@@ -130,12 +169,15 @@ export function createPlayer(
     luckyRoll: false,
     extraTurns: 0,
     rentBoostUntilTurn: 0,
+    gameStats: emptyGameStats(),
   };
 }
 
 export function createLobbyState(options: LobbyOptions): FortuneGameState {
   const createdAt = now();
-  const host = createPlayer(options.hostPlayerId, options.hostName, options.pawnSlug, 0, false);
+  const matchMode = options.matchMode && MATCH_MODES[options.matchMode] ? options.matchMode : "classic";
+  const settings = settingsForMode(matchMode);
+  const host = createPlayer(options.hostPlayerId, options.hostName, options.pawnSlug, 0, false, settings.startCash);
   const state: FortuneGameState = {
     code: options.code,
     revision: 0,
@@ -157,6 +199,7 @@ export function createLobbyState(options: LobbyOptions): FortuneGameState {
     pendingPurchase: null,
     auction: null,
     tradeOffer: null,
+    bankruptcyQueue: [],
     landmarkStealChoice: null,
     cardChoice: null,
     luckyDeck: [],
@@ -173,7 +216,7 @@ export function createLobbyState(options: LobbyOptions): FortuneGameState {
     eventSequence: 0,
     winnerId: null,
     rngSeed: options.seed || 8675309,
-    settings: { ...DEFAULT_SETTINGS },
+    settings,
   };
 
   const usedPawns = new Set([host.pawnSlug]);
@@ -181,7 +224,7 @@ export function createLobbyState(options: LobbyOptions): FortuneGameState {
     const pawn = PAWNS.find((candidate) => !usedPawns.has(candidate.slug)) ?? PAWNS[(index + 1) % PAWNS.length];
     usedPawns.add(pawn.slug);
     state.players.push(
-      createPlayer(`bot-${options.code}-${index + 1}`, BOT_NAMES[index % BOT_NAMES.length], pawn.slug, index + 1, true),
+      createPlayer(`bot-${options.code}-${index + 1}`, BOT_NAMES[index % BOT_NAMES.length], pawn.slug, index + 1, true, settings.startCash),
     );
   }
 
@@ -204,7 +247,7 @@ export function addHumanPlayer(
   const pawn = PAWNS.find((candidate) => candidate.slug === requestedPawn && !usedPawns.has(candidate.slug))
     ?? PAWNS.find((candidate) => !usedPawns.has(candidate.slug))
     ?? PAWNS[0];
-  const player = createPlayer(playerId, name, pawn.slug, state.players.length, false);
+  const player = createPlayer(playerId, name, pawn.slug, state.players.length, false, state.settings.startCash);
   state.players.push(player);
   state.updatedAt = now();
   addEvent(state, "room", "New arrival", `${player.name} joined with the ${pawn.name}.`, {
@@ -258,7 +301,8 @@ export function netWorth(state: FortuneGameState, playerId: string) {
   const propertyValue = ownedProperties(state, playerId).reduce((total, property) => {
     const space = SPACE_BY_INDEX.get(property.spaceIndex);
     if (!space) return total;
-    return total + space.price + Math.round(space.upgradeCost * property.upgrades * 0.8);
+    const deedValue = property.mortgaged ? mortgageValue(space) : space.price;
+    return total + deedValue + Math.round(space.upgradeCost * property.upgrades * 0.8);
   }, 0);
   return player.cash + propertyValue;
 }
@@ -267,6 +311,26 @@ function fullDistrictOwned(state: FortuneGameState, ownerId: string, district: n
   const districtSpaces = SPACES.filter((space) => space.district === district);
   return districtSpaces.length > 0
     && districtSpaces.every((space) => state.properties[String(space.index)]?.ownerId === ownerId);
+}
+
+function districtHasMortgage(state: FortuneGameState, ownerId: string, district: number) {
+  return SPACES.some((space) => (
+    space.district === district
+    && state.properties[String(space.index)]?.ownerId === ownerId
+    && state.properties[String(space.index)]?.mortgaged
+  ));
+}
+
+export function mortgageValue(space: SpaceDefinition) {
+  return Math.max(0, Math.round(space.price * 0.5));
+}
+
+export function unmortgageCost(space: SpaceDefinition) {
+  return Math.max(0, Math.ceil(mortgageValue(space) * 1.2));
+}
+
+export function upgradeRefund(space: SpaceDefinition) {
+  return Math.max(0, Math.round(space.upgradeCost * 0.5));
 }
 
 export function propertyPostedRent(
@@ -287,6 +351,7 @@ export function propertyPostedRent(
       property.upgrades === 0
       && space.district !== null
       && fullDistrictOwned(state, property.ownerId, space.district)
+      && !districtHasMortgage(state, property.ownerId, space.district)
     ) rent *= 2;
   } else if (space.kind === "transport") {
     const count = ownedProperties(state, property.ownerId)
@@ -307,6 +372,7 @@ export function propertyRentPauseReason(
 ) {
   const space = SPACE_BY_INDEX.get(property.spaceIndex);
   if (!space) return null;
+  if (property.mortgaged) return "Mortgaged deed";
   if (state.modifiers.freeAdmissionUntilTurn >= state.turnNumber) return "Free Admission Day";
   if (property.closedUntilTurn >= state.turnNumber) return "Inspection closure";
   if (property.closedUntilOwnerVisit) return "Sudden Rebrand";
@@ -339,26 +405,81 @@ function activePlayers(state: FortuneGameState) {
   return state.players.filter((player) => !player.bankrupt);
 }
 
-function releaseProperties(state: FortuneGameState, playerId: string) {
-  for (const [key, property] of Object.entries(state.properties)) {
-    if (property.ownerId === playerId) delete state.properties[key];
-  }
-}
-
-function markBankrupt(state: FortuneGameState, player: PlayerState) {
+function markBankrupt(state: FortuneGameState, player: PlayerState, creditorId: string | null = null) {
   if (player.bankrupt) return;
+  const creditor = creditorId
+    ? state.players.find((candidate) => candidate.id === creditorId && !candidate.bankrupt)
+    : null;
   player.bankrupt = true;
   player.cash = 0;
-  releaseProperties(state, player.id);
-  addEvent(state, "warning", "Bankrupt!", `${player.name} is out; their deeds return to the Avenue.`, {
+  player.heldCards = [];
+  for (const [key, property] of Object.entries(state.properties)) {
+    if (property.ownerId !== player.id) continue;
+    if (creditor && creditor.id !== player.id) property.ownerId = creditor.id;
+    else delete state.properties[key];
+  }
+  state.bankruptcyQueue = state.bankruptcyQueue.filter((debt) => debt.playerId !== player.id);
+  if (state.tradeOffer && [state.tradeOffer.fromPlayerId, state.tradeOffer.toPlayerId].includes(player.id)) {
+    state.tradeOffer = null;
+  }
+  addEvent(state, "warning", "Bankrupt!", creditor
+    ? `${player.name} is out; their remaining deeds transfer to ${creditor.name}.`
+    : `${player.name} is out; their deeds return to the Avenue.`, {
     playerId: player.id,
   });
 }
 
-function debit(state: FortuneGameState, player: PlayerState, amount: number) {
-  const paid = Math.min(player.cash, Math.max(0, Math.round(amount)));
+function queueDebt(
+  state: FortuneGameState,
+  player: PlayerState,
+  creditorId: string | null,
+  originalAmount: number,
+  remainingAmount: number,
+  reason: string,
+) {
+  const existing = state.bankruptcyQueue.find((debt) => (
+    debt.playerId === player.id && debt.creditorId === creditorId
+  ));
+  if (existing) {
+    existing.originalAmount += originalAmount;
+    existing.remainingAmount += remainingAmount;
+    existing.reason = `${existing.reason} + ${reason}`;
+    return;
+  }
+  const debt: BankruptcyDebt = {
+    id: `debt-${state.turnNumber}-${state.eventSequence + 1}-${player.id}`,
+    playerId: player.id,
+    creditorId,
+    originalAmount,
+    remainingAmount,
+    reason,
+  };
+  state.bankruptcyQueue.push(debt);
+  addEvent(
+    state,
+    "warning",
+    "Bankruptcy rescue",
+    `${player.name} still owes F${remainingAmount}. Mortgage deeds, sell upgrades, trade, or declare bankruptcy.`,
+    { playerId: player.id },
+  );
+}
+
+function debit(
+  state: FortuneGameState,
+  player: PlayerState,
+  amount: number,
+  creditorId: string | null = null,
+  reason = "Avenue fee",
+) {
+  if (player.bankrupt) return 0;
+  const charge = Math.max(0, Math.round(amount));
+  if (charge <= player.cash) {
+    player.cash -= charge;
+    return charge;
+  }
+  const paid = player.cash;
   player.cash -= paid;
-  if (player.cash <= 0 && amount > paid - 1) markBankrupt(state, player);
+  queueDebt(state, player, creditorId, charge, charge - paid, reason);
   return paid;
 }
 
@@ -367,8 +488,9 @@ function transfer(
   from: PlayerState,
   to: PlayerState,
   amount: number,
+  reason = `Payment to ${to.name}`,
 ) {
-  const paid = debit(state, from, amount);
+  const paid = debit(state, from, amount, to.id, reason);
   to.cash += paid;
   return paid;
 }
@@ -468,7 +590,9 @@ function resolveOwnable(
     });
     return;
   }
-  const paid = transfer(state, visitor, owner, rent);
+  const paid = transfer(state, visitor, owner, rent, `Entry fee at ${space.name}`);
+  if (visitor.gameStats) visitor.gameStats.largestFeePaid = Math.max(visitor.gameStats.largestFeePaid, rent);
+  if (owner.gameStats) owner.gameStats.largestFeeCollected = Math.max(owner.gameStats.largestFeeCollected, rent);
   addEvent(state, "rent", "Entry fee", `${visitor.name} paid ${owner.name} F${paid} at ${space.name}.`, {
     playerId: visitor.id,
     spaceIndex: space.index,
@@ -536,6 +660,8 @@ function freeUpgradeIndexes(state: FortuneGameState, player: PlayerState) {
       (entry) => entry.space.kind === "landmark"
         && entry.space.district !== null
         && fullDistrictOwned(state, player.id, entry.space.district)
+        && !districtHasMortgage(state, player.id, entry.space.district)
+        && !entry.property.mortgaged
         && entry.property.upgrades < MAX_UPGRADES,
     )
     .map((entry) => entry.space.index);
@@ -581,6 +707,7 @@ function stealableLandmarks(state: FortuneGameState, player: PlayerState) {
       && owner.id !== player.id
       && !owner.bankrupt
       && property.upgrades === 0
+      && !property.mortgaged
       && !districtHasImprovements(state, owner.id, space)
       && (property.purchasePrice ?? space.price) <= player.cash
     ));
@@ -1189,11 +1316,13 @@ function buyPending(state: FortuneGameState, player: PlayerState) {
   if (player.cash < price) throw new Error(`You need F${price} to buy ${space.name}.`);
   player.cash -= price;
   player.purchaseDiscount = 0;
+  if (player.gameStats) player.gameStats.deedsBought += 1;
   state.properties[String(space.index)] = {
     spaceIndex: space.index,
     ownerId: player.id,
     purchasePrice: price,
     upgrades: 0,
+    mortgaged: false,
     closedUntilTurn: 0,
     rentMultiplierUntilTurn: 0,
     nextVisitorFree: false,
@@ -1238,11 +1367,16 @@ function settleAuction(state: FortuneGameState) {
     return;
   }
   winner.cash -= auction.currentBid;
+  if (winner.gameStats) {
+    winner.gameStats.deedsBought += 1;
+    winner.gameStats.auctionsWon += 1;
+  }
   state.properties[String(space.index)] = {
     spaceIndex: space.index,
     ownerId: winner.id,
     purchasePrice: auction.currentBid,
     upgrades: 0,
+    mortgaged: false,
     closedUntilTurn: 0,
     rentMultiplierUntilTurn: 0,
     nextVisitorFree: false,
@@ -1340,12 +1474,17 @@ function auctionPass(state: FortuneGameState, playerId: string) {
 }
 
 function upgradeProperty(state: FortuneGameState, player: PlayerState, spaceIndex: number) {
+  if (state.pendingPurchase !== null) throw new Error("Resolve the landed deed before managing your portfolio.");
   const property = propertyFor(state, spaceIndex);
   const space = SPACE_BY_INDEX.get(spaceIndex);
   if (!property || property.ownerId !== player.id || !space) throw new Error("You do not own that deed.");
   if (space.kind !== "landmark") throw new Error("Only landmarks can be upgraded.");
+  if (property.mortgaged) throw new Error("Pay off this deed before adding crowns.");
   if (space.district === null || !fullDistrictOwned(state, player.id, space.district)) {
     throw new Error(`Own every ${space.districtName ?? "matching-color"} landmark before adding crowns.`);
+  }
+  if (districtHasMortgage(state, player.id, space.district)) {
+    throw new Error(`Pay off every mortgage in ${space.districtName} before adding crowns.`);
   }
   if (property.upgrades >= MAX_UPGRADES) throw new Error("That landmark already has its castle.");
   const cost = Math.max(0, space.upgradeCost - player.upgradeDiscount);
@@ -1354,10 +1493,114 @@ function upgradeProperty(state: FortuneGameState, player: PlayerState, spaceInde
   player.upgradeDiscount = 0;
   property.upgrades += 1;
   const becameCastle = property.upgrades === MAX_UPGRADES;
+  if (becameCastle && player.gameStats) player.gameStats.castlesBuilt += 1;
   addEvent(state, "upgrade", becameCastle ? "Castle crowned" : `Crown ${property.upgrades}/2`, `${player.name} ${becameCastle ? "raised a castle at" : "placed a crown on"} ${space.name} for F${cost}.`, {
     playerId: player.id,
     spaceIndex,
   });
+}
+
+function sellPropertyUpgrade(state: FortuneGameState, player: PlayerState, spaceIndex: number) {
+  if (state.pendingPurchase !== null) throw new Error("Resolve the landed deed before managing your portfolio.");
+  const property = propertyFor(state, spaceIndex);
+  const space = SPACE_BY_INDEX.get(spaceIndex);
+  if (!property || property.ownerId !== player.id || !space) throw new Error("You do not own that deed.");
+  if (space.kind !== "landmark" || property.upgrades <= 0) throw new Error("That landmark has no crown to sell.");
+  const wasCastle = property.upgrades === MAX_UPGRADES;
+  const refund = upgradeRefund(space);
+  property.upgrades -= 1;
+  player.cash += refund;
+  addEvent(
+    state,
+    "mortgage",
+    wasCastle ? "Castle downsized" : "Crown sold",
+    `${player.name} sold ${wasCastle ? "the castle" : "one crown"} at ${space.name} back to the Avenue for F${refund}.`,
+    { playerId: player.id, spaceIndex },
+  );
+}
+
+function mortgageProperty(state: FortuneGameState, player: PlayerState, spaceIndex: number) {
+  if (state.pendingPurchase !== null) throw new Error("Resolve the landed deed before managing your portfolio.");
+  const property = propertyFor(state, spaceIndex);
+  const space = SPACE_BY_INDEX.get(spaceIndex);
+  if (!property || property.ownerId !== player.id || !space) throw new Error("You do not own that deed.");
+  if (property.mortgaged) throw new Error("That deed is already mortgaged.");
+  if (property.upgrades > 0 || districtHasImprovements(state, player.id, space)) {
+    throw new Error("Sell every crown and castle in this district before mortgaging a deed.");
+  }
+  const value = mortgageValue(space);
+  property.mortgaged = true;
+  player.cash += value;
+  addEvent(state, "mortgage", "Deed mortgaged", `${player.name} mortgaged ${space.name} for F${value}. Its entry fee is paused.`, {
+    playerId: player.id,
+    spaceIndex,
+  });
+}
+
+function unmortgageProperty(state: FortuneGameState, player: PlayerState, spaceIndex: number) {
+  if (state.pendingPurchase !== null) throw new Error("Resolve the landed deed before managing your portfolio.");
+  const property = propertyFor(state, spaceIndex);
+  const space = SPACE_BY_INDEX.get(spaceIndex);
+  if (!property || property.ownerId !== player.id || !space) throw new Error("You do not own that deed.");
+  if (!property.mortgaged) throw new Error("That deed is already open.");
+  const cost = unmortgageCost(space);
+  if (player.cash < cost) throw new Error(`You need F${cost} to reopen ${space.name}.`);
+  player.cash -= cost;
+  property.mortgaged = false;
+  addEvent(state, "mortgage", "Mortgage cleared", `${player.name} paid F${cost} and reopened ${space.name}.`, {
+    playerId: player.id,
+    spaceIndex,
+  });
+}
+
+function settleDebt(state: FortuneGameState, playerId: string) {
+  const debt = state.bankruptcyQueue[0];
+  if (!debt) throw new Error("There is no rescue payment waiting.");
+  if (debt.playerId !== playerId) throw new Error("The table is waiting for another player to finish their rescue.");
+  const player = state.players.find((candidate) => candidate.id === playerId);
+  if (!player || player.bankrupt) throw new Error("That player is no longer active.");
+  if (player.cash < debt.remainingAmount) {
+    throw new Error(`Raise F${debt.remainingAmount - player.cash} more before settling this debt.`);
+  }
+  player.cash -= debt.remainingAmount;
+  const creditor = debt.creditorId
+    ? state.players.find((candidate) => candidate.id === debt.creditorId && !candidate.bankrupt)
+    : null;
+  if (creditor) creditor.cash += debt.remainingAmount;
+  state.bankruptcyQueue.shift();
+  addEvent(
+    state,
+    "mortgage",
+    "Rescue complete",
+    `${player.name} settled the remaining F${debt.remainingAmount}${creditor ? ` owed to ${creditor.name}` : ""} and stays on the Avenue.`,
+    {
+      playerId,
+      moneyTransfer: creditor ? {
+        fromPlayerId: player.id,
+        toPlayerId: creditor.id,
+        amount: debt.remainingAmount,
+      } : undefined,
+    },
+  );
+}
+
+function declareBankruptcy(state: FortuneGameState, playerId: string) {
+  const debt = state.bankruptcyQueue[0];
+  if (!debt) throw new Error("There is no bankruptcy decision waiting.");
+  if (debt.playerId !== playerId) throw new Error("The table is waiting for another player.");
+  const player = state.players.find((candidate) => candidate.id === playerId);
+  if (!player) throw new Error("That player is no longer available.");
+  const wasCurrent = currentPlayer(state)?.id === player.id;
+  state.bankruptcyQueue.shift();
+  markBankrupt(state, player, debt.creditorId);
+  if (!wasCurrent || state.phase !== "playing") return;
+  state.pendingPurchase = null;
+  state.auction = null;
+  state.tradeOffer = null;
+  state.landmarkStealChoice = null;
+  state.cardChoice = null;
+  state.rolled = true;
+  if (state.bankruptcyQueue.length === 0) endTurn(state, player);
 }
 
 function activateHeldCard(state: FortuneGameState, player: PlayerState, cardId: string) {
@@ -1387,6 +1630,7 @@ function declareWinner(state: FortuneGameState, player: PlayerState, reason: str
   state.pendingPurchase = null;
   state.auction = null;
   state.tradeOffer = null;
+  state.bankruptcyQueue = [];
   state.landmarkStealChoice = null;
   state.cardChoice = null;
   addEvent(state, "winner", "Fortune Crowned", `${player.name} wins Fortune Avenue — ${reason}`, {
@@ -1426,6 +1670,7 @@ function endTurn(state: FortuneGameState, player: PlayerState) {
   if (state.pendingPurchase !== null) throw new Error("Buy the deed, auction it, or skip the auction first.");
   if (state.auction) throw new Error("Finish the live auction before ending the turn.");
   if (state.tradeOffer) throw new Error("Finish or withdraw the trade offer before ending the turn.");
+  if (state.bankruptcyQueue.length > 0) throw new Error("Finish the bankruptcy rescue before ending the turn.");
   if (state.landmarkStealChoice) throw new Error("Choose the landmark from your Plot Twist before ending the turn.");
   if (state.cardChoice) throw new Error(`Finish the ${state.cardChoice.cardTitle} choice before ending the turn.`);
   if (checkWinner(state, player)) return;
@@ -1496,6 +1741,9 @@ function validateTradeProperties(
     if (property.upgrades > 0 || districtHasImprovements(state, ownerId, space)) {
       throw new Error(`A district with crowns or a castle cannot be traded. ${space.name} must stay put.`);
     }
+    if (property.mortgaged) {
+      throw new Error(`${space.name} must be reopened before it can be traded.`);
+    }
   }
 }
 
@@ -1562,6 +1810,8 @@ function acceptTrade(state: FortuneGameState, playerId: string) {
   recipient.cash = recipient.cash - offer.requestedCash + offer.offeredCash;
   offer.offeredSpaceIndexes.forEach((spaceIndex) => { state.properties[String(spaceIndex)].ownerId = recipient.id; });
   offer.requestedSpaceIndexes.forEach((spaceIndex) => { state.properties[String(spaceIndex)].ownerId = proposer.id; });
+  if (proposer.gameStats) proposer.gameStats.tradesCompleted += 1;
+  if (recipient.gameStats) recipient.gameStats.tradesCompleted += 1;
   state.tradeOffer = null;
   addEvent(state, "trade", "Deal accepted", `${recipient.name} shook on the deal with ${proposer.name}. Deeds and cash have changed hands.`, {
     playerId: recipient.id,
@@ -1621,6 +1871,27 @@ export function applyRoomAction(
     throw new Error("There is no open trade offer.");
   }
 
+  if (state.bankruptcyQueue.length > 0) {
+    const debt = state.bankruptcyQueue[0];
+    if (debt.playerId !== playerId) {
+      throw new Error("The table is paused while another player finishes their bankruptcy rescue.");
+    }
+    const debtor = state.players.find((candidate) => candidate.id === playerId);
+    if (!debtor || debtor.bankrupt) throw new Error("That player is no longer active.");
+    if (action.type === "mortgage") mortgageProperty(state, debtor, action.spaceIndex);
+    else if (action.type === "sell-upgrade") sellPropertyUpgrade(state, debtor, action.spaceIndex);
+    else if (action.type === "settle-debt") settleDebt(state, playerId);
+    else if (action.type === "declare-bankruptcy") declareBankruptcy(state, playerId);
+    else if (action.type === "propose-trade") proposeTrade(state, debtor, action);
+    else throw new Error("Raise cash, settle the debt, trade, or declare bankruptcy before play continues.");
+    state.updatedAt = now();
+    return state;
+  }
+
+  if (action.type === "settle-debt" || action.type === "declare-bankruptcy") {
+    throw new Error("There is no bankruptcy rescue waiting.");
+  }
+
   if (state.auction) {
     if (action.type === "auction-bid") auctionBid(state, playerId, action.amount);
     else if (action.type === "auction-pass") auctionPass(state, playerId);
@@ -1665,6 +1936,15 @@ export function applyRoomAction(
     case "upgrade":
       upgradeProperty(state, player, action.spaceIndex);
       break;
+    case "sell-upgrade":
+      sellPropertyUpgrade(state, player, action.spaceIndex);
+      break;
+    case "mortgage":
+      mortgageProperty(state, player, action.spaceIndex);
+      break;
+    case "unmortgage":
+      unmortgageProperty(state, player, action.spaceIndex);
+      break;
     case "use-card":
       activateHeldCard(state, player, action.cardId);
       break;
@@ -1693,10 +1973,35 @@ function botUpgradeTarget(state: FortuneGameState, bot: PlayerState) {
       (entry) => entry.space.kind === "landmark"
         && entry.space.district !== null
         && fullDistrictOwned(state, bot.id, entry.space.district)
+        && !districtHasMortgage(state, bot.id, entry.space.district)
+        && !entry.property.mortgaged
         && entry.property.upgrades < MAX_UPGRADES
         && bot.cash >= Math.max(0, entry.space.upgradeCost - bot.upgradeDiscount) + 300,
     )
     .sort((a, b) => b.space.baseRent - a.space.baseRent)[0] ?? null;
+}
+
+function botRescueAction(state: FortuneGameState, bot: PlayerState): RoomAction {
+  const debt = state.bankruptcyQueue[0];
+  if (!debt || debt.playerId !== bot.id) return { type: "declare-bankruptcy" };
+  if (bot.cash >= debt.remainingAmount) return { type: "settle-debt" };
+  const improvement = ownedProperties(state, bot.id)
+    .flatMap((property) => {
+      const space = SPACE_BY_INDEX.get(property.spaceIndex);
+      return space && property.upgrades > 0 ? [{ property, space }] : [];
+    })
+    .sort((a, b) => upgradeRefund(b.space) - upgradeRefund(a.space))[0];
+  if (improvement) return { type: "sell-upgrade", spaceIndex: improvement.space.index };
+  const mortgage = ownedProperties(state, bot.id)
+    .flatMap((property) => {
+      const space = SPACE_BY_INDEX.get(property.spaceIndex);
+      return space && !property.mortgaged && property.upgrades === 0 && !districtHasImprovements(state, bot.id, space)
+        ? [{ property, space }]
+        : [];
+    })
+    .sort((a, b) => mortgageValue(b.space) - mortgageValue(a.space))[0];
+  if (mortgage) return { type: "mortgage", spaceIndex: mortgage.space.index };
+  return { type: "declare-bankruptcy" };
 }
 
 function botAuctionAction(state: FortuneGameState, bot: PlayerState): RoomAction {
@@ -1861,6 +2166,13 @@ export function runBotTurns(source: FortuneGameState, options: { singleAuctionSt
       const recipient = state.players.find((player) => player.id === state.tradeOffer?.toPlayerId);
       if (!recipient?.isBot) break;
       state = applyRoomAction(state, recipient.id, { type: botAcceptsTrade(state, recipient) ? "trade-accept" : "trade-decline" });
+      continue;
+    }
+    if (state.bankruptcyQueue.length > 0) {
+      const debt = state.bankruptcyQueue[0];
+      const debtor = state.players.find((player) => player.id === debt.playerId);
+      if (!debtor?.isBot) break;
+      state = applyRoomAction(state, debtor.id, botRescueAction(state, debtor));
       continue;
     }
     if (state.auction) {

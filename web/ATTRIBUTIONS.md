@@ -2,4 +2,4 @@
 
 ## Lucide Icons
 
-The Quick Match, Host Friends, and Join a Room menu symbols use icons from [Lucide](https://lucide.dev/), licensed under the ISC License.
+Menu, profile, tutorial, deed-management, trade, auction, mortgage, rescue, sound, and haptics symbols use icons from [Lucide](https://lucide.dev/), licensed under the ISC License.
