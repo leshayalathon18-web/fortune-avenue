@@ -436,6 +436,7 @@ function BoardCenter({ state, you, onAction, busy }: { state: FortuneGameState; 
   const isYourTurn = !you.isSpectator && active?.id === you.playerId;
   const pendingSpace = state.pendingPurchase === null ? null : SPACE_BY_INDEX.get(state.pendingPurchase);
   const youPlayer = state.players.find((player) => player.id === you.playerId);
+  const balancePlayer = you.isSpectator ? active : youPlayer;
   const luckyCoin = youPlayer?.heldCards.find((card) => card.title === "Lucky Coin");
   const turnsRemaining = Math.max(0, state.settings.maxTurns - state.turnNumber);
   const finaleNear = turnsRemaining <= 12 && state.phase === "playing";
@@ -447,7 +448,7 @@ function BoardCenter({ state, you, onAction, busy }: { state: FortuneGameState; 
       <div className={`turn-console ${isYourTurn ? "is-yours" : ""}`}>
         <div className={`match-status ${finaleNear ? "is-final-countdown" : ""}`}><span>{MATCH_MODES[state.settings.matchMode].shortName}</span><small>{state.settings.matchMode === "grand-finale" || finaleNear ? `${turnsRemaining} turns to closing bell` : `${state.settings.requiredProperties} deeds + ${money(state.settings.targetNetWorth)} to win`}</small></div>
         <span className="turn-label">{state.phase === "finished" ? "Final fortune" : isYourTurn ? "Your turn" : `${active?.name ?? "Avenue"}'s turn`}</span>
-        {active && <div className="turn-player"><PawnPortrait pawn={pawnBySlug(active.pawnSlug)} /><div><strong>{active.name}</strong><small>Round {state.roundNumber} • Turn {state.turnNumber}</small></div></div>}
+        {active && <div className="turn-player-block"><div className="turn-player"><PawnPortrait pawn={pawnBySlug(active.pawnSlug)} /><div><strong>{active.name}</strong><small>Round {state.roundNumber} • Turn {state.turnNumber}</small></div></div>{balancePlayer && <div className="spendable-balance" aria-label={`${balancePlayer.name} has ${money(balancePlayer.cash)} available to spend`}><Coins aria-hidden="true" /><span><small>{you.isSpectator ? `${balancePlayer.name}'s cash` : "Cash to spend"}</small><strong>{money(balancePlayer.cash)}</strong></span></div>}</div>}
         <ShakeDiceControl
           firstValue={state.dice?.[0] ?? 1}
           secondValue={state.dice?.[1] ?? 6}
@@ -1059,7 +1060,7 @@ function PlayerRail({ state, youId }: { state: FortuneGameState; youId: string }
     <section className="player-rail" aria-label="Players">
       {state.players.map((player) => {
         const deeds = ownedProperties(state, player.id).length;
-        return <article key={player.id} className={`player-chip ${active?.id === player.id ? "is-active" : ""} ${player.id === youId ? "is-you" : ""} ${player.bankrupt ? "is-bankrupt" : ""}`} style={{ "--player-color": player.color } as CSSProperties}><PawnPortrait pawn={pawnBySlug(player.pawnSlug)} /><div className="player-chip-main"><span><strong>{player.name}</strong>{player.id === youId && <em>You</em>}{player.isBot && <em>Bot</em>}</span><small>{player.bankrupt ? "Bankrupt" : `${deeds} deeds • ${money(netWorth(state, player.id))} worth`}</small></div><b>{money(player.cash)}</b></article>;
+        return <article key={player.id} className={`player-chip ${active?.id === player.id ? "is-active" : ""} ${player.id === youId ? "is-you" : ""} ${player.bankrupt ? "is-bankrupt" : ""}`} style={{ "--player-color": player.color } as CSSProperties}><PawnPortrait pawn={pawnBySlug(player.pawnSlug)} /><div className="player-chip-main"><span><strong>{player.name}</strong>{player.id === youId && <em>You</em>}{player.isBot && <em>Bot</em>}</span><small>{player.bankrupt ? "Bankrupt" : `${deeds} deeds • ${money(netWorth(state, player.id))} worth`}</small></div><span className="player-cash" aria-label={`${player.name} has ${money(player.cash)} cash`}><small>Cash</small><b>{money(player.cash)}</b></span></article>;
       })}
     </section>
   );
