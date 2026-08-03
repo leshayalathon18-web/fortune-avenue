@@ -2,13 +2,13 @@
 
 > Roll in. Buy big. Cause chaos.
 
-[![Play Fortune Avenue](web/public/og.png)](https://fortune-avenue-live.spotifyps5email.chatgpt.site)
+[![Play Fortune Avenue](web/public/og.png)](https://fortune-avenue-release-15.jaytonmack111.chatgpt.site)
 
 Fortune Avenue is an original physical and browser-playable board game built around strange roadside landmarks, colorful resin pawns, and playful chaos.
 
 ## Play now
 
-**[Open the published Fortune Avenue game](https://fortune-avenue-live.spotifyps5email.chatgpt.site)**
+**[Open the published Fortune Avenue game](https://fortune-avenue-release-15.jaytonmack111.chatgpt.site)**
 
 - Play immediately with 1–5 autonomous bots.
 - Host persistent 2–6 player friend rooms with six-character codes and invite links.
